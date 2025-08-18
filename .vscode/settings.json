@@ -58,6 +58,7 @@
   "C_Cpp_Runner.msvcSecureNoWarnings": false,
   "files.associations": {
     "string.h": "c",
-    "omp.h": "c"
+    "omp.h": "c",
+    "sdl_image.h": "c"
   }
 }
