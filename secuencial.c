@@ -11,7 +11,11 @@
 
 #include <math.h>
 
-static const char* dirtTexture = "assets/dirt_64x64.png";
+static const char* dirtTexture = "assets/dirt_128x128.png";
+static const char* grassTexture = "assets/grass_block_top_128x128.png";
+
+static const float TOTAL_TIME = 11.0f;
+static const float FADE_TIME = 0.40f;
 
 typedef struct {
     int rows, cols;
@@ -52,7 +56,7 @@ static Grid best_grid(int n, int w, int h){
 
 static GLuint load_texture(const char* path){
 
-    SDL_Surface* surface = IMG_load(path);
+    SDL_Surface* surface = IMG_Load(path);
 
     if (!surface){
         fprintf(stderr, "IMG_Load failed for %s: %s\n", path, IMG_GetError());
@@ -93,6 +97,93 @@ static GLuint load_texture(const char* path){
 }
 
 
+static void drawGrid(GLuint dirtTex, GLuint grassTex,
+                         int rows, int cols, int w, int h,
+                         bool draw_lines, float elapsed_sec){
+
+    if (rows <= 0 || cols <= 0) return;
+
+    float cellW= (float)w / (float)cols; //ancho de cada celda
+    float cellH= (float)h / (float)rows; //alto de cada celda
+
+    //distancia maxima manhattan desde 0,0 hasta cualquier celda
+    int maxDist = (rows -1) + (cols -1);
+    float dt = (maxDist > 0) ? (TOTAL_TIME / (float)maxDist) : 0.0f;
+
+    glEnable(GL_TEXTURE_2D);
+    // glBindTexture(GL_TEXTURE_2D, tex);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    for (int r = 0; r<rows; r++){
+        for (int c =0; c<cols; c++){
+            // distancia en pasos desde la semilla de 0,0
+            int d = r +c;
+            float start_t = d * dt;
+
+            //alpha de grass (0 a 1) la celda de la semilla d=0 empieza en grass
+            float alpha = 0.0f;
+
+            if (d==0 ){
+                alpha = 1.0f; //semilla instantanea
+            }else if( elapsed_sec > start_t){
+                if (FADE_TIME <= 0.0f) alpha = 1.0f;
+                else{
+                    alpha = (elapsed_sec - start_t) / FADE_TIME;
+                    if (alpha > 1.0f) alpha = 1.0f;
+                    if (alpha < 0.0f) alpha = 0.0f;
+                }
+            }
+            float x = c * cellW;
+            float y = r * cellH;
+            //dirt de fondo
+            glBindTexture(GL_TEXTURE_2D, dirtTex);
+            glColor4f(1.f,1.f,1.f,1.f);
+            glBegin(GL_QUADS);
+                glTexCoord2f(0.f, 0.f); glVertex2f(x,          y);
+                glTexCoord2f(1.f, 0.f); glVertex2f(x + cellW,  y);
+                glTexCoord2f(1.f, 1.f); glVertex2f(x + cellW,  y + cellH);
+                glTexCoord2f(0.f, 1.f); glVertex2f(x,          y + cellH);
+            glEnd();
+
+            //grass encima del alpha
+            if (alpha > 0.0f){
+                glBindTexture(GL_TEXTURE_2D, grassTex);
+                glColor4f(1.f, 1.f, 1.f, alpha);
+                glBegin(GL_QUADS);
+                    glTexCoord2f(0.f, 0.f); glVertex2f(x,          y);
+                    glTexCoord2f(1.f, 0.f); glVertex2f(x + cellW,  y);
+                    glTexCoord2f(1.f, 1.f); glVertex2f(x + cellW,  y + cellH);
+                    glTexCoord2f(0.f, 1.f); glVertex2f(x,          y + cellH);
+                glEnd();
+            }
+
+        }
+    }
+
+    
+
+    // Deshabilitar texturas
+    glDisable(GL_TEXTURE_2D);
+
+    //lineas del grid
+    // if (draw_lines){
+    //     glColor4f(0.12f, 0.12f, 0.12f, 1.f);
+    //     glLineWidth(1.f);
+    //     glBegin(GL_LINES);
+    //     for (int i = 1; i < cols; ++i) {
+    //         float x = i * cellW;
+    //         glVertex2f(x, 0.f); glVertex2f(x, (float)h);
+    //     }
+    //     for (int j = 1; j < rows; ++j) {
+    //         float y = j * cellH;
+    //         glVertex2f(0.f, y); glVertex2f((float)w, y);
+    //     }
+    //     glEnd();
+    // }
+
+}
+
 
 int main(int argc, char**argv){
     int semilla = 42;
@@ -112,14 +203,24 @@ int main(int argc, char**argv){
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
+    int img_flags = IMG_INIT_PNG | IMG_INIT_JPG;
+    if ((IMG_Init(img_flags) & img_flags) == 0) {
+        fprintf(stderr, "IMG_Init failed: %s\n", IMG_GetError());
+        SDL_Quit();
+        return 1;
+    }
 
     //atributros de opengl antes de crear una ventana
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+
     //crear una ventana con el contexto de open gl
     SDL_Window *win = SDL_CreateWindow("Screensaver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        640,480, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+        1536, 1024, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     if (!win) {
         fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -135,39 +236,67 @@ int main(int argc, char**argv){
         return 1;
     }
 
+    SDL_GL_SetSwapInterval(1);
+
     // Estado basico de OpenGL
-    glEnable(GL_DEPTH_TEST);
+    // glEnable(GL_DEPTH_TEST);
+    // glDisable(GL_DEPTH_TEST);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+
+    // Tamaño inicial y grid fijo
+    int w0, h0; SDL_GetWindowSize(win, &w0, &h0);
+    Grid g = best_grid(n, w0, h0);  // lo fijamos al inicio
+
+    // Carga de texturas
+    GLuint dirtTex  = load_texture(dirtTexture);
+    GLuint grassTex = load_texture(grassTexture);
+    if (!dirtTex || !grassTex) {
+        fprintf(stderr, "No se pudieron cargar texturas\n");
+        if (dirtTex)  glDeleteTextures(1, &dirtTex);
+        if (grassTex) glDeleteTextures(1, &grassTex);
+        SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1;
+    }
+
+    // Timer
+    Uint32 t0_ms = SDL_GetTicks();
+
     bool running = true;
-    while(running){
+    bool draw_lines = true;
+
+    while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = false;
-            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) running = false;
+            if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym == SDLK_ESCAPE) running = false;
+                if (e.key.keysym.sym == SDLK_g)      draw_lines = !draw_lines;
+                if (e.key.keysym.sym == SDLK_r)      t0_ms = SDL_GetTicks(); // reinicia la ola
+            }
         }
 
-        int w, h;
-        SDL_GetWindowSize(win, &w, &h);
-        glViewport(0, 0, w, h);
+        int w, h; SDL_GetWindowSize(win, &w, &h);
+        float elapsed = (SDL_GetTicks() - t0_ms) / 1000.0f;
 
+        glViewport(0, 0, w, h);
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        gluPerspective(60.0, (double)w/(double)h, 0.1, 100.0);
+        glOrtho(0.0, (GLdouble)w, (GLdouble)h, 0.0, -1.0, 1.0);
 
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        gluLookAt(0,0,3,  0,0,0,  0,1,0);
-
-        // Limpiar la pantalla
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT);
 
         // aqui es donde se van a dibujar las cosas 
+        drawGrid(dirtTex, grassTex, g.rows, g.cols, w, h, draw_lines, elapsed);
 
         SDL_GL_SwapWindow(win);
     }
 
+    glDeleteTextures(1, &dirtTex);
+    glDeleteTextures(1, &grassTex);
     SDL_GL_DeleteContext(glc);
     SDL_DestroyWindow(win);
+    IMG_Quit();
     SDL_Quit();
     return 0;
 }
