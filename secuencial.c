@@ -11,6 +11,9 @@
 
 #include <math.h>
 
+
+// imagenes 
+static const char* waterTexture = "assets/agua.png";
 static const char* dirtTexture = "assets/dirt_128x128.png";
 static const char* grassTexture = "assets/grass_block_top_128x128.png";
 
@@ -99,7 +102,7 @@ static GLuint load_texture(const char* path){
 
 static void drawGrid(GLuint dirtTex, GLuint grassTex,
                          int rows, int cols, int w, int h,
-                         bool draw_lines, float elapsed_sec){
+                         bool draw_lines, float elapsed_sec, int seedRow, int seedCol, bool hasSeed){
 
     if (rows <= 0 || cols <= 0) return;
 
@@ -118,7 +121,12 @@ static void drawGrid(GLuint dirtTex, GLuint grassTex,
     for (int r = 0; r<rows; r++){
         for (int c =0; c<cols; c++){
             // distancia en pasos desde la semilla de 0,0
-            int d = r +c;
+            int d;
+            if (hasSeed) {
+                d = abs(r - seedRow) + abs(c - seedCol);
+            } else {
+                d = r + c; // fallback: esquina superior izquierda
+            }
             float start_t = d * dt;
 
             //alpha de grass (0 a 1) la celda de la semilla d=0 empieza en grass
@@ -186,6 +194,11 @@ static void drawGrid(GLuint dirtTex, GLuint grassTex,
 
 
 int main(int argc, char**argv){
+    int seedRow = 0;
+    int seedCol = 0;
+    bool hasSeed = false;
+
+
     int semilla = 42;
     srand(semilla);
 
@@ -272,7 +285,25 @@ int main(int argc, char**argv){
                 if (e.key.keysym.sym == SDLK_g)      draw_lines = !draw_lines;
                 if (e.key.keysym.sym == SDLK_r)      t0_ms = SDL_GetTicks(); // reinicia la ola
             }
+             if (e.button.button == SDL_BUTTON_LEFT) {
+                int mouseX = e.button.x;
+                int mouseY = e.button.y;
+
+                // convertir a celda del grid
+                int w, h;
+                SDL_GetWindowSize(win, &w, &h);
+                float cellW = (float)w / g.cols;
+                float cellH = (float)h / g.rows;
+
+                seedCol = mouseX / cellW;
+                seedRow = mouseY / cellH;
+
+                hasSeed = true;
+                t0_ms = SDL_GetTicks(); // reinicia animación desde ese punto
+            }
         }
+
+        
 
         int w, h; SDL_GetWindowSize(win, &w, &h);
         float elapsed = (SDL_GetTicks() - t0_ms) / 1000.0f;
@@ -287,7 +318,7 @@ int main(int argc, char**argv){
         glClear(GL_COLOR_BUFFER_BIT);
 
         // aqui es donde se van a dibujar las cosas 
-        drawGrid(dirtTex, grassTex, g.rows, g.cols, w, h, draw_lines, elapsed);
+        drawGrid(dirtTex, grassTex, g.rows, g.cols, w, h, draw_lines, elapsed, seedRow, seedCol, hasSeed);
 
         SDL_GL_SwapWindow(win);
     }
