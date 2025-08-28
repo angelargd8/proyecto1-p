@@ -8,14 +8,26 @@
 #include <SDL2/SDL_image.h> // carga imagenes
 #include <GL/gl.h> // funciones de OpenGL
 #include <GL/glu.h> // utilidades de OpenGL
+#include <SDL2/SDL_ttf.h> // textossss
 
 #include <math.h>
+#include <time.h>
 
+#define TEX_COUNT 10
 
 // imagenes 
 static const char* waterTexture = "assets/agua.png";
+static const char* snowTexture = "assets/snow.png";
+static const char* iceTexture = "assets/blue_ice.png";
+static const char* lavaTexture = "assets/lava.png";
+static const char* diamondTexture = "assets/diamond_ore.png";
+static const char* endStoneTexture = "assets/end_stone.png";
+static const char* obsidianTexture = "assets/obsidian.png";
+static const char* jackoLanternTexture = "assets/jack_o_lantern.png";
+
 static const char* dirtTexture = "assets/dirt_128x128.png";
 static const char* grassTexture = "assets/grass_block_top_128x128.png";
+
 
 static const float TOTAL_TIME = 11.0f;
 static const float FADE_TIME = 0.40f;
@@ -99,27 +111,50 @@ static GLuint load_texture(const char* path){
     return tex;
 }
 
+static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int cols) {
+    int sr = *seedRow, sc = *seedCol;
 
-static void drawGrid(GLuint dirtTex, GLuint grassTex,
-                         int rows, int cols, int w, int h,
-                         bool draw_lines, float elapsed_sec, int seedRow, int seedCol, bool hasSeed){
+    // Distancias Manhattan a las 4 esquinas
+    int d00 = sr + sc;                             // (0,0)
+    int d01 = sr + (cols - 1 - sc);                // (0, cols-1)
+    int d10 = (rows - 1 - sr) + sc;                // (rows-1, 0)
+    int d11 = (rows - 1 - sr) + (cols - 1 - sc);   // (rows-1, cols-1)
 
+    int r = 0, c = 0, maxd = d00;
+    if (d01 > maxd) { maxd = d01; r = 0;         c = cols - 1; }
+    if (d10 > maxd) { maxd = d10; r = rows - 1;  c = 0; }
+    if (d11 > maxd) { maxd = d11; r = rows - 1;  c = cols - 1; }
+
+    *seedRow = r;
+    *seedCol = c;
+}
+
+
+static void drawGridCycle(
+    GLuint *tex_cycle, int tex_count,
+    int stage_idx, float stage_time,
+    int rows, int cols, int w, int h,
+    int seedRow, int seedCol, bool hasSeed
+) {
     if (rows <= 0 || cols <= 0) return;
 
     float cellW= (float)w / (float)cols; //ancho de cada celda
     float cellH= (float)h / (float)rows; //alto de cada celda
 
     //distancia maxima manhattan desde 0,0 hasta cualquier celda
-    int maxDist = (rows -1) + (cols -1);
+    int maxDist = (rows - 1) + (cols - 1);
     float dt = (maxDist > 0) ? (TOTAL_TIME / (float)maxDist) : 0.0f;
 
+    GLuint UNDER = tex_cycle[stage_idx];
+    GLuint OVER  = tex_cycle[(stage_idx + 1) % tex_count];
+
     glEnable(GL_TEXTURE_2D);
-    // glBindTexture(GL_TEXTURE_2D, tex);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.f, 1.f, 1.f, 1.f);
 
-    for (int r = 0; r<rows; r++){
-        for (int c =0; c<cols; c++){
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
             // distancia en pasos desde la semilla de 0,0
             int d;
             if (hasSeed) {
@@ -130,23 +165,20 @@ static void drawGrid(GLuint dirtTex, GLuint grassTex,
             float start_t = d * dt;
 
             //alpha de grass (0 a 1) la celda de la semilla d=0 empieza en grass
-            float alpha = 0.0f;
-
-            if (d==0 ){
-                alpha = 1.0f; //semilla instantanea
-            }else if( elapsed_sec > start_t){
-                if (FADE_TIME <= 0.0f) alpha = 1.0f;
-                else{
-                    alpha = (elapsed_sec - start_t) / FADE_TIME;
-                    if (alpha > 1.0f) alpha = 1.0f;
-                    if (alpha < 0.0f) alpha = 0.0f;
-                }
+            float alpha = 0.f;
+            if (d == 0) {
+                alpha = 1.f; //semilla instantanea
+            } else if (stage_time > start_t) {
+                alpha = (FADE_TIME > 0.f) ? (stage_time - start_t) / FADE_TIME : 1.f;
+                if (alpha > 1.f) alpha = 1.f;
+                if (alpha < 0.f) alpha = 0.f;
             }
-            float x = c * cellW;
-            float y = r * cellH;
-            //dirt de fondo
-            glBindTexture(GL_TEXTURE_2D, dirtTex);
-            glColor4f(1.f,1.f,1.f,1.f);
+
+            float x = c * cellW, y = r * cellH;
+
+            // UNDER textura base de la etapa
+            glBindTexture(GL_TEXTURE_2D, UNDER);
+            glColor4f(1.f, 1.f, 1.f, 1.f);
             glBegin(GL_QUADS);
                 glTexCoord2f(0.f, 0.f); glVertex2f(x,          y);
                 glTexCoord2f(1.f, 0.f); glVertex2f(x + cellW,  y);
@@ -154,9 +186,9 @@ static void drawGrid(GLuint dirtTex, GLuint grassTex,
                 glTexCoord2f(0.f, 1.f); glVertex2f(x,          y + cellH);
             glEnd();
 
-            //grass encima del alpha
-            if (alpha > 0.0f){
-                glBindTexture(GL_TEXTURE_2D, grassTex);
+            // OVER se superpone con alpha
+            if (alpha > 0.f) {
+                glBindTexture(GL_TEXTURE_2D, OVER);
                 glColor4f(1.f, 1.f, 1.f, alpha);
                 glBegin(GL_QUADS);
                     glTexCoord2f(0.f, 0.f); glVertex2f(x,          y);
@@ -169,28 +201,11 @@ static void drawGrid(GLuint dirtTex, GLuint grassTex,
         }
     }
 
-    
 
     // Deshabilitar texturas
     glDisable(GL_TEXTURE_2D);
-
-    //lineas del grid
-    // if (draw_lines){
-    //     glColor4f(0.12f, 0.12f, 0.12f, 1.f);
-    //     glLineWidth(1.f);
-    //     glBegin(GL_LINES);
-    //     for (int i = 1; i < cols; ++i) {
-    //         float x = i * cellW;
-    //         glVertex2f(x, 0.f); glVertex2f(x, (float)h);
-    //     }
-    //     for (int j = 1; j < rows; ++j) {
-    //         float y = j * cellH;
-    //         glVertex2f(0.f, y); glVertex2f((float)w, y);
-    //     }
-    //     glEnd();
-    // }
-
 }
+
 
 
 int main(int argc, char**argv){
@@ -260,21 +275,45 @@ int main(int argc, char**argv){
     int w0, h0; SDL_GetWindowSize(win, &w0, &h0);
     Grid g = best_grid(n, w0, h0);  // lo fijamos al inicio
 
-    // Carga de texturas
-    GLuint dirtTex  = load_texture(dirtTexture);
-    GLuint grassTex = load_texture(grassTexture);
-    if (!dirtTex || !grassTex) {
+    // // Carga de texturas
+
+    GLuint dirtTex   = load_texture(dirtTexture);
+    GLuint grassTex  = load_texture(grassTexture);
+    GLuint waterTex  = load_texture(waterTexture);
+    GLuint snowTex   = load_texture(snowTexture);
+    GLuint iceTex    = load_texture(iceTexture);
+    GLuint lavaTex   = load_texture(lavaTexture);
+    GLuint diamondTex= load_texture(diamondTexture);
+    GLuint obsidianTex = load_texture(obsidianTexture);
+    GLuint endStoneTex = load_texture(endStoneTexture);
+    GLuint jackTex   = load_texture(jackoLanternTexture);
+
+    if (!dirtTex || !grassTex || !waterTex || !snowTex || !iceTex ||  !lavaTex || !diamondTex || !obsidianTex || !endStoneTex || !jackTex) {
         fprintf(stderr, "No se pudieron cargar texturas\n");
         if (dirtTex)  glDeleteTextures(1, &dirtTex);
         if (grassTex) glDeleteTextures(1, &grassTex);
+        if (waterTex) glDeleteTextures(1, &waterTex);
+        if (iceTex)  glDeleteTextures(1, &iceTex);
+        if (lavaTex) glDeleteTextures(1, &lavaTex);
+        if (snowTex) glDeleteTextures(1, &snowTex);
+        if (diamondTex) glDeleteTextures(1, &diamondTex);
+        if (obsidianTex) glDeleteTextures(1, &obsidianTex);
+        if (endStoneTex) glDeleteTextures(1, &endStoneTex);
+        if (jackTex) glDeleteTextures(1, &jackTex);
         SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1;
     }
+
+    GLuint tex_cycle[TEX_COUNT] = {
+    dirtTex, grassTex, waterTex, iceTex, snowTex, lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex
+    };
 
     // Timer
     Uint32 t0_ms = SDL_GetTicks();
 
     bool running = true;
     bool draw_lines = true;
+
+    int prev_stage_idx = -1;
 
     while (running) {
         SDL_Event e;
@@ -285,29 +324,48 @@ int main(int argc, char**argv){
                 if (e.key.keysym.sym == SDLK_g)      draw_lines = !draw_lines;
                 if (e.key.keysym.sym == SDLK_r)      t0_ms = SDL_GetTicks(); // reinicia la ola
             }
-             if (e.button.button == SDL_BUTTON_LEFT) {
-                int mouseX = e.button.x;
-                int mouseY = e.button.y;
-
-                // convertir a celda del grid
+             if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
                 int w, h;
                 SDL_GetWindowSize(win, &w, &h);
                 float cellW = (float)w / g.cols;
                 float cellH = (float)h / g.rows;
 
-                seedCol = mouseX / cellW;
-                seedRow = mouseY / cellH;
+                seedCol = (int)(e.button.x / cellW);
+                seedRow = (int)(e.button.y / cellH);
 
                 hasSeed = true;
-                t0_ms = SDL_GetTicks(); // reinicia animación desde ese punto
+                t0_ms = SDL_GetTicks(); // reinicia el tiempo, la ola comienza en la nueva semilla
             }
         }
 
         
 
         int w, h; SDL_GetWindowSize(win, &w, &h);
+
+
+        // Timer globalss
         float elapsed = (SDL_GetTicks() - t0_ms) / 1000.0f;
 
+        // Cada etapa dura TOTAL_TIME + FADE_TIME
+        const float STAGE_DURATION = TOTAL_TIME + FADE_TIME;
+
+        // indice de etapa y tiempo dentro de la etapa
+        int   stage_idx  = (int)floorf(elapsed / STAGE_DURATION) % TEX_COUNT;
+        float stage_time = fmodf(elapsed, STAGE_DURATION);
+
+        if (prev_stage_idx != stage_idx) {
+            if (prev_stage_idx != -1) {
+                // Cambió de etapa, mueve la semilla a donde terminó la ola anterior
+                advance_seed_to_far_corner(&seedRow, &seedCol, g.rows, g.cols);
+                hasSeed = true;
+                // No resetea t0_ms: el tiempo global sigue y la nueva etapa arranca suave
+                // printf("Nueva etapa %d, semilla en (%d,%d)\n", stage_idx, seedRow, seedCol);
+            }
+            prev_stage_idx = stage_idx;
+        }
+
+
+        // Dibujo
         glViewport(0, 0, w, h);
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
@@ -317,8 +375,9 @@ int main(int argc, char**argv){
         glLoadIdentity();
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // aqui es donde se van a dibujar las cosas 
-        drawGrid(dirtTex, grassTex, g.rows, g.cols, w, h, draw_lines, elapsed, seedRow, seedCol, hasSeed);
+        drawGridCycle(tex_cycle, TEX_COUNT, stage_idx, stage_time,
+                    g.rows, g.cols, w, h,
+                    seedRow, seedCol, hasSeed);
 
         SDL_GL_SwapWindow(win);
     }

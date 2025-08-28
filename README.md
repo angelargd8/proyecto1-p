@@ -17,7 +17,9 @@ sudo apt install mesa-utils freeglut3-dev libglew-dev libglfw3-dev libglm-dev
 
 compilar y correr el secuencial:
 ```
-gcc -O2 secuencial.c -o sec $(sdl2-config --cflags --libs) -lSDL2_image -lGL -lGLU && ./sec 1000
+
+gcc -O2 secuencial.c -o sec $(sdl2-config --cflags) $(sdl2-config --libs) -lSDL2_image -lSDL2_ttf -lGL -lGLU -lm && ./sec 1000
+
 ```
 
 
