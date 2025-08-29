@@ -13,6 +13,7 @@
 #include <math.h>
 #include <time.h>
 
+// configuracion
 #define TEX_COUNT 10
 
 // imagenes 
@@ -29,8 +30,8 @@ static const char* dirtTexture = "assets/dirt_128x128.png";
 static const char* grassTexture = "assets/grass_block_top_128x128.png";
 
 
-static const float TOTAL_TIME = 11.0f;
-static const float FADE_TIME = 0.40f;
+static const float TOTAL_TIME = 11.0f; //tiempo de propagacion base en sec
+static const float FADE_TIME = 0.40f; //tiempo de mezcla por celda, igual en sec
 
 typedef struct {
     int rows, cols;
@@ -110,6 +111,77 @@ static GLuint load_texture(const char* path){
     SDL_FreeSurface(surface);
     return tex;
 }
+
+// Renderiza texto con SDL_ttf a una textura OpenGL
+static GLuint text_to_texture(TTF_Font* font, const char* msg,
+                              SDL_Color col, int* out_w, int* out_h)
+{
+    //Renderiza el texto
+    SDL_Surface* src = TTF_RenderUTF8_Blended(font, msg, col);
+    if (!src) return 0;
+
+    //convertirlo a un formato conocido (ABGR8888)
+    SDL_Surface* s = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ABGR8888, 0);
+    SDL_FreeSurface(src);
+    if (!s) return 0;
+
+    // Sube como GL_RGBA (memoria ABGR8888 en little-endian corresponde a GL_RGBA)
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1); 
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s->w, s->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, s->pixels);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    if (out_w) *out_w = s->w;
+    if (out_h) *out_h = s->h;
+
+    SDL_FreeSurface(s);
+    return tex;
+}
+
+static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glColor4f(1,1,1,1);
+    glBegin(GL_QUADS);
+      glTexCoord2f(0,0); glVertex2f(x,   y);
+      glTexCoord2f(1,0); glVertex2f(x+w, y);
+      glTexCoord2f(1,1); glVertex2f(x+w, y+h);
+      glTexCoord2f(0,1); glVertex2f(x,   y+h);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+}
+
+
+static TTF_Font* open_font_portable(int ptsize) {
+    const char* rel = "assets/DejaVuSans.ttf";
+    char *base = SDL_GetBasePath();
+    TTF_Font* f = NULL;
+
+    if (base) {
+        size_t need = strlen(base) + strlen(rel) + 1;
+        char *p = (char*)malloc(need);
+        if (p) {
+            snprintf(p, need, "%s%s", base, rel);
+            f = TTF_OpenFont(p, ptsize);
+            free(p);
+        }
+        SDL_free(base);
+        if (f) return f;
+    }
+
+    f = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", ptsize);
+    if (f) return f;
+}
+
 
 static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int cols) {
     int sr = *seedRow, sc = *seedCol;
@@ -213,9 +285,11 @@ int main(int argc, char**argv){
     int seedCol = 0;
     bool hasSeed = false;
 
-
-    int semilla = 42;
-    srand(semilla);
+    // si es más de un argumento
+    if (argc < 2) {
+        fprintf(stderr, "Uso: %s <n>\n", argv[0]);
+        return 1;
+    }
 
     int n = atoi(argv[1]);
 
@@ -268,12 +342,24 @@ int main(int argc, char**argv){
 
     // Estado basico de OpenGL
     // glEnable(GL_DEPTH_TEST);
-    // glDisable(GL_DEPTH_TEST);
+    glDisable(GL_DEPTH_TEST);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
     // Tamaño inicial y grid fijo
     int w0, h0; SDL_GetWindowSize(win, &w0, &h0);
     Grid g = best_grid(n, w0, h0);  // lo fijamos al inicio
+
+    if (TTF_Init() != 0) { fprintf(stderr, "TTF_Init failed: %s\n", TTF_GetError()); SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+    TTF_Font* font = open_font_portable(18);
+    if (!font) { fprintf(stderr, "No pude abrir ninguna fuente: %s\n", TTF_GetError()); TTF_Quit(); SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+
+    // FPS state
+    Uint32 fps_t0 = SDL_GetTicks();
+    int    fps_frames = 0;
+    float  fps_value  = 0.f;
+    GLuint fps_tex    = 0;
+    int    fps_w = 0, fps_h = 0;
+    char   fps_msg[64] = "FPS: 0.0";
 
     // // Carga de texturas
 
@@ -300,6 +386,7 @@ int main(int argc, char**argv){
         if (obsidianTex) glDeleteTextures(1, &obsidianTex);
         if (endStoneTex) glDeleteTextures(1, &endStoneTex);
         if (jackTex) glDeleteTextures(1, &jackTex);
+        TTF_CloseFont(font); TTF_Quit();
         SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1;
     }
 
@@ -332,6 +419,10 @@ int main(int argc, char**argv){
 
                 seedCol = (int)(e.button.x / cellW);
                 seedRow = (int)(e.button.y / cellH);
+                if (seedCol < 0) seedCol = 0;
+                if (seedCol >= g.cols) seedCol = g.cols - 1;
+                if (seedRow < 0) seedRow = 0;
+                if (seedRow >= g.rows) seedRow = g.rows - 1;
 
                 hasSeed = true;
                 t0_ms = SDL_GetTicks(); // reinicia el tiempo, la ola comienza en la nueva semilla
@@ -364,6 +455,20 @@ int main(int argc, char**argv){
             prev_stage_idx = stage_idx;
         }
 
+        // FPS update cada 0.5s
+        fps_frames++;
+        Uint32 now = SDL_GetTicks();
+        if (now - fps_t0 >= 500) {
+            fps_value  = (float)fps_frames * 1000.0f / (float)(now - fps_t0);
+            fps_frames = 0;
+            fps_t0     = now;
+
+            snprintf(fps_msg, sizeof fps_msg, "FPS: %.1f", fps_value);
+            if (fps_tex) glDeleteTextures(1, &fps_tex);
+            SDL_Color white = {255,255,255,255};
+            fps_tex = text_to_texture(font, fps_msg, white, &fps_w, &fps_h);
+        }
+
 
         // Dibujo
         glViewport(0, 0, w, h);
@@ -379,11 +484,36 @@ int main(int argc, char**argv){
                     g.rows, g.cols, w, h,
                     seedRow, seedCol, hasSeed);
 
+        // HUD FPS
+        if (fps_tex) {
+            float pad = 10.f;
+            float bx = 10.f, by = 10.f, bw = fps_w + pad*2, bh = fps_h + pad*2;
+
+            glDisable(GL_TEXTURE_2D);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(0.f, 0.f, 0.f, 0.4f);
+            glBegin(GL_QUADS);
+              glVertex2f(bx,     by);
+              glVertex2f(bx+bw,  by);
+              glVertex2f(bx+bw,  by+bh);
+              glVertex2f(bx,     by+bh);
+            glEnd();
+
+            draw_textured_quad(fps_tex, bx + pad, by + pad, (float)fps_w, (float)fps_h);
+        }
+
         SDL_GL_SwapWindow(win);
     }
 
-    glDeleteTextures(1, &dirtTex);
-    glDeleteTextures(1, &grassTex);
+    // Limpieza
+    GLuint all[] = {dirtTex, grassTex, waterTex, iceTex, snowTex, lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex};
+    glDeleteTextures(sizeof all / sizeof all[0], all);
+    if (fps_tex) glDeleteTextures(1, &fps_tex);
+
+    TTF_CloseFont(font);
+    TTF_Quit();
+
     SDL_GL_DeleteContext(glc);
     SDL_DestroyWindow(win);
     IMG_Quit();
