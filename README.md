@@ -27,5 +27,3 @@ dependencias que instale:
 sudo apt update
 sudo apt install build-essential libsdl2-dev libsdl2-image-dev libglu1-mesa-dev mesa-utils
 
-sudo apt install libsdl2-dev libsdl2-image-dev
-
