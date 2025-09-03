@@ -1,8 +1,9 @@
 # Proyecto 1 - paralela
 
 # requerimientos
-- tener instalado OpenMP
-- tener OpenGl
+dependencias que deberian de estar instaladas: 
+sudo apt update
+sudo apt install build-essential libsdl2-dev libsdl2-image-dev libglu1-mesa-dev mesa-utils
 
 Primero debe tener instalado openmp, verificar con el siguiente comando:
 ```
@@ -25,14 +26,8 @@ gcc -O2 secuencial.c -o sec $(sdl2-config --cflags) $(sdl2-config --libs) -lSDL2
 compilar y correr el paralelo:
 ```
 
-gcc paralelo.c -o paralelo -fopenmp -lSDL2 -lSDL2_image -lSDL2_ttf -lGL -lm 
-
-./paralelo 1000
+gcc paralelo.c -o paralelo -fopenmp -lSDL2 -lSDL2_image -lSDL2_ttf -lGL -lm && ./paralelo 1000
 
 ```
 
-
-dependencias que instale: 
-sudo apt update
-sudo apt install build-essential libsdl2-dev libsdl2-image-dev libglu1-mesa-dev mesa-utils
 

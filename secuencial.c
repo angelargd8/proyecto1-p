@@ -15,6 +15,7 @@
 
 // configuracion
 #define TEX_COUNT 10
+#define MAX_SEEDS 100
 
 // imagenes 
 static const char* waterTexture = "assets/agua.png";
@@ -33,9 +34,56 @@ static const char* grassTexture = "assets/grass_block_top_128x128.png";
 static const float TOTAL_TIME = 11.0f; //tiempo de propagacion base en sec
 static const float FADE_TIME = 0.40f; //tiempo de mezcla por celda, igual en sec
 
+/** @struct Grid
+ *  @brief Par (filas,columnas) para particionar la ventana en celdas.
+ *
+ *  @var Grid::rows  Número de filas.
+ *  @var Grid::cols  Número de columnas.
+ */
 typedef struct {
     int rows, cols;
 } Grid;
+
+
+/** @struct Seed
+ *  @brief Semilla de propagación para iniciar una onda desde una celda específica.
+ *
+ *  @var Seed::row        Fila de la celda semilla.
+ *  @var Seed::col        Columna de la celda semilla.
+ *  @var Seed::startTime  Tiempo SDL (ms) cuando inició la propagación desde esta semilla.
+ *
+ *  @note Se usa para registrar clicks del usuario e iniciar nuevas ondas.
+ */
+typedef struct {
+    int row;
+    int col;
+    Uint32 startTime; // momento en que comenzó la propagación de esta semilla
+} Seed;
+
+
+/** @brief Arreglo global de semillas activas y contador asociado.
+ *
+ * @var seeds     Buffer circular/simple de hasta MAX_SEEDS semillas.
+ * @var seedCount Número de semillas almacenadas actualmente (0..MAX_SEEDS).
+ */
+Seed seeds[MAX_SEEDS];
+int seedCount = 0;
+
+
+/** @brief Calcula la mejor malla (rows x cols) para acomodar @p n elementos
+ *         intentando aproximar el aspecto de @p w:@p h (ancho:alto).
+ *
+ * Recorre divisores de @p n y escoge (rows, cols) cuyo ratio cols/rows
+ * minimiza el error contra (w/h).
+ *
+ * @param n  Número total de celdas/elementos a acomodar (n > 0).
+ * @param w  Ancho de la ventana en píxeles.
+ * @param h  Alto de la ventana en píxeles.
+ * @return   Grid {rows, cols}. Si w<=0 o h<=0, retorna {1, n}.
+ *           Si n<=0, retorna {0,0}.
+ *
+ * @note No crea ni redimensiona la ventana; solo calcula la malla ideal.
+ */
 
 //seleccionar n = rows x cols y el ratio tiene que ser cols/rols = w/h
 static Grid best_grid(int n, int w, int h){
@@ -70,6 +118,20 @@ static Grid best_grid(int n, int w, int h){
 }
 
 
+/** @brief Carga una imagen (PNG/JPG) desde disco y la sube como textura OpenGL.
+ *
+ * Usa SDL_image para decodificar y configura parámetros de filtrado y wrap.
+ *
+ * @param path  Ruta al archivo de imagen.
+ * @return      ID de textura OpenGL (GLuint) válido si tuvo éxito; 0 si falla.
+ *
+ * @pre   IMG_Init() debe haber sido llamado con soporte para PNG/JPG.
+ * @pre   Debe existir contexto OpenGL actual (SDL_GL_CreateContext).
+ * @post  La textura queda ligada a GL_TEXTURE_2D con filtros LINEAR y CLAMP.
+ *
+ * @warning Devuelve 0 en error y escribe el motivo en stderr.
+ * @note    El formato de subida se elige según BytesPerPixel y máscara de R.
+ */
 static GLuint load_texture(const char* path){
 
     SDL_Surface* surface = IMG_Load(path);
@@ -112,6 +174,24 @@ static GLuint load_texture(const char* path){
     return tex;
 }
 
+
+/** @brief Renderiza texto con SDL_ttf a un SDL_Surface y lo sube como textura.
+ *
+ * Genera una textura RGBA con el texto @p msg usando la @p font y @p col.
+ *
+ * @param font   Fuente TTF abierta (TTF_OpenFont).
+ * @param msg    Cadena UTF-8 a rasterizar.
+ * @param col    Color del texto (SDL_Color).
+ * @param out_w  [out] Ancho en píxeles del bitmap generado (puede ser NULL).
+ * @param out_h  [out] Alto en píxeles del bitmap generado (puede ser NULL).
+ * @return       ID de textura OpenGL (GLuint) con el texto; 0 si falla.
+ *
+ * @pre   TTF_Init() y una @p font válida.
+ * @pre   Contexto OpenGL actual.
+ * @post  Textura GL_RGBA con filtros LINEAR y CLAMP.
+ *
+ * @note  Útil para HUD (p. ej., contador de FPS). El fondo es transparente.
+ */
 // Renderiza texto con SDL_ttf a una textura OpenGL
 static GLuint text_to_texture(TTF_Font* font, const char* msg,
                               SDL_Color col, int* out_w, int* out_h)
@@ -145,6 +225,19 @@ static GLuint text_to_texture(TTF_Font* font, const char* msg,
     return tex;
 }
 
+/** @brief Dibuja un quad 2D texturizado en coordenadas de pantalla.
+ *
+ * Asume una proyección ortográfica (0..w, 0..h) ya configurada.
+ *
+ * @param tex  ID de textura OpenGL a usar (GL_TEXTURE_2D).
+ * @param x    Coordenada X de la esquina superior izquierda.
+ * @param y    Coordenada Y de la esquina superior izquierda.
+ * @param w    Ancho del quad.
+ * @param h    Alto del quad.
+ *
+ * @pre   Contexto OpenGL válido, proyección/modelview configuradas.
+ * @post  Restablece GL_TEXTURE_2D a deshabilitado.
+ */
 static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
@@ -161,6 +254,17 @@ static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
 }
 
 
+/** @brief Abre una fuente TTF de forma "portable".
+ *
+ * Intenta primero encontrar "assets/DejaVuSans.ttf" relativo al ejecutable,
+ * y si falla, prueba una ruta de sistema Linux estándar.
+ *
+ * @param ptsize  Tamaño de la fuente en puntos.
+ * @return        Puntero a TTF_Font abierto; NULL si no pudo abrir ninguna.
+ *
+ * @pre   TTF_Init() debe haberse llamado.
+ * @note  Adecuado para empaquetar la fuente junto al binario.
+ */
 static TTF_Font* open_font_portable(int ptsize) {
     const char* rel = "assets/DejaVuSans.ttf";
     char *base = SDL_GetBasePath();
@@ -183,6 +287,20 @@ static TTF_Font* open_font_portable(int ptsize) {
 }
 
 
+/** @brief Mueve una semilla (celda) a la esquina Manhattan más lejana.
+ *
+ * Dado (@p seedRow, @p seedCol) dentro de [0..rows-1]x[0..cols-1], calcula
+ * la esquina cuya distancia Manhattan a la semilla actual sea máxima y
+ * actualiza la semilla a esa celda.
+ *
+ * @param seedRow  [in,out] Fila actual de la semilla; se sobrescribe.
+ * @param seedCol  [in,out] Columna actual de la semilla; se sobrescribe.
+ * @param rows     Número de filas del grid.
+ * @param cols     Número de columnas del grid.
+ *
+ * @pre   0 <= *seedRow < rows y 0 <= *seedCol < cols, con rows,cols > 0.
+ * @post  (*seedRow,*seedCol) queda en { (0,0), (0,cols-1), (rows-1,0), (rows-1,cols-1) }.
+ */
 static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int cols) {
     int sr = *seedRow, sc = *seedCol;
 
@@ -201,6 +319,32 @@ static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int
     *seedCol = c;
 }
 
+/** @brief Dibuja una malla de celdas que hacen "fade" desde una textura a la siguiente
+ *         siguiendo una onda temporal basada en distancia Manhattan a una semilla.
+ *
+ * Para cada celda calcula el instante de inicio @c start_t = d*dt (con dt en función
+ * de TOTAL_TIME y la distancia Manhattan máxima) y mezcla desde @p UNDER (etapa actual)
+ * hacia @p OVER (siguiente etapa) durante FADE_TIME.
+ *
+ * @param tex_cycle   Arreglo circular de texturas de tamaño @p tex_count.
+ * @param tex_count   Número total de texturas en el ciclo (>=2).
+ * @param stage_idx   Índice de la textura base (UNDER) para la etapa actual.
+ * @param stage_time  Tiempo transcurrido dentro de la etapa [0, TOTAL_TIME+FADE_TIME).
+ * @param rows        Filas del grid.
+ * @param cols        Columnas del grid.
+ * @param w           Ancho de la ventana en píxeles.
+ * @param h           Alto de la ventana en píxeles.
+ * @param seedRow     Fila de la semilla (origen de la onda si @p hasSeed es true).
+ * @param seedCol     Columna de la semilla (origen de la onda si @p hasSeed es true).
+ * @param hasSeed     Si true, usa (seedRow,seedCol); si false, usa (0,0) como semilla.
+ *
+ * @pre   Contexto OpenGL válido y proyección ortográfica configurada.
+ * @pre   Texturas de @p tex_cycle válidas y enlazables a GL_TEXTURE_2D.
+ * @post  Dibuja todo el grid en el framebuffer actual.
+ *
+ * @note  UNDER = tex_cycle[stage_idx], OVER = tex_cycle[(stage_idx+1)%tex_count].
+ * @note  dt = TOTAL_TIME / ((rows - 1) + (cols - 1)).
+ */
 static void drawGridCycle(
     GLuint *tex_cycle, int tex_count,
     int stage_idx, float stage_time,
@@ -269,18 +413,29 @@ static void drawGridCycle(
     glDisable(GL_TEXTURE_2D);
 }
 
-   #define MAX_SEEDS 100
-    typedef struct {
-    int row;
-    int col;
-    Uint32 startTime; // momento en que comenzó la propagación de esta semilla
-    } Seed;
 
-    Seed seeds[MAX_SEEDS];
-    int seedCount = 0;
-
-
-
+/** @brief Punto de entrada: inicializa SDL/GL/TTF, carga texturas, ejecuta el loop,
+ *         maneja eventos y limpia recursos. Implementación secuencial (sin OpenMP/threads).
+ *
+ * Uso:  ./programa <n>
+ *  - @p n = número de celdas totales del grid (debe ser > 4).
+ *  - Teclas: ESC para salir, 'g' alterna líneas (placeholder), 'r' reinicia ola.
+ *  - Click izquierdo: fija nueva semilla en la celda clicada y la agrega a @c seeds[].
+ *
+ * @param argc  Recuento de argumentos.
+ * @param argv  Vector de argumentos.
+ * @return      0 si todo OK; 1 en caso de error de inicialización/recursos.
+ *
+ * @pre   Requiere contexto gráfico disponible (ventana OpenGL).
+ * @post  Libera texturas, fuente, contexto GL y subsistemas SDL/IMG/TTF.
+ *
+ * @details
+ *  - Calcula FPS cada 0.5 s y los muestra en HUD (textura de texto) y/o consola.
+ *  - Administra un ciclo de texturas (TEX_COUNT) con transiciones por celda.
+ *  - La semilla se mueve automáticamente a la esquina más lejana al cambiar de etapa.
+ *
+ * @errors Mensajes a stderr cuando falla SDL/IMG/TTF/GL o carga de texturas.
+ */
 int main(int argc, char**argv){
     int seedRow = 0;
     int seedCol = 0;
@@ -470,6 +625,7 @@ int main(int argc, char**argv){
             fps_value  = (float)fps_frames * 1000.0f / (float)(now - fps_t0);
             fps_frames = 0;
             fps_t0     = now;
+            printf("FPS: %.1f\n", fps_value);
 
             snprintf(fps_msg, sizeof fps_msg, "FPS: %.1f", fps_value);
             if (fps_tex) glDeleteTextures(1, &fps_tex);
