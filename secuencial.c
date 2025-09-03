@@ -201,7 +201,6 @@ static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int
     *seedCol = c;
 }
 
-
 static void drawGridCycle(
     GLuint *tex_cycle, int tex_count,
     int stage_idx, float stage_time,
@@ -210,12 +209,7 @@ static void drawGridCycle(
 ) {
     if (rows <= 0 || cols <= 0) return;
 
-    float cellW= (float)w / (float)cols; //ancho de cada celda
-    float cellH= (float)h / (float)rows; //alto de cada celda
-
-    //distancia maxima manhattan desde 0,0 hasta cualquier celda
     int maxDist = (rows - 1) + (cols - 1);
-    float dt = (maxDist > 0) ? (TOTAL_TIME / (float)maxDist) : 0.0f;
 
     GLuint UNDER = tex_cycle[stage_idx];
     GLuint OVER  = tex_cycle[(stage_idx + 1) % tex_count];
@@ -223,23 +217,25 @@ static void drawGridCycle(
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(1.f, 1.f, 1.f, 1.f);
 
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
-            // distancia en pasos desde la semilla de 0,0
+            float dt = (maxDist > 0) ? (TOTAL_TIME / (float)maxDist) : 0.0f;
+
+            float cellW = (float)w / (float)cols;
+            float cellH = (float)h / (float)rows;
+
             int d;
             if (hasSeed) {
                 d = abs(r - seedRow) + abs(c - seedCol);
             } else {
-                d = r + c; // fallback: esquina superior izquierda
+                d = r + c;
             }
             float start_t = d * dt;
 
-            //alpha de grass (0 a 1) la celda de la semilla d=0 empieza en grass
             float alpha = 0.f;
             if (d == 0) {
-                alpha = 1.f; //semilla instantanea
+                alpha = 1.f;
             } else if (stage_time > start_t) {
                 alpha = (FADE_TIME > 0.f) ? (stage_time - start_t) / FADE_TIME : 1.f;
                 if (alpha > 1.f) alpha = 1.f;
@@ -248,7 +244,6 @@ static void drawGridCycle(
 
             float x = c * cellW, y = r * cellH;
 
-            // UNDER textura base de la etapa
             glBindTexture(GL_TEXTURE_2D, UNDER);
             glColor4f(1.f, 1.f, 1.f, 1.f);
             glBegin(GL_QUADS);
@@ -258,7 +253,6 @@ static void drawGridCycle(
                 glTexCoord2f(0.f, 1.f); glVertex2f(x,          y + cellH);
             glEnd();
 
-            // OVER se superpone con alpha
             if (alpha > 0.f) {
                 glBindTexture(GL_TEXTURE_2D, OVER);
                 glColor4f(1.f, 1.f, 1.f, alpha);
@@ -269,14 +263,21 @@ static void drawGridCycle(
                     glTexCoord2f(0.f, 1.f); glVertex2f(x,          y + cellH);
                 glEnd();
             }
-
         }
     }
 
-
-    // Deshabilitar texturas
     glDisable(GL_TEXTURE_2D);
 }
+
+   #define MAX_SEEDS 100
+    typedef struct {
+    int row;
+    int col;
+    Uint32 startTime; // momento en que comenzó la propagación de esta semilla
+    } Seed;
+
+    Seed seeds[MAX_SEEDS];
+    int seedCount = 0;
 
 
 
@@ -411,22 +412,31 @@ int main(int argc, char**argv){
                 if (e.key.keysym.sym == SDLK_g)      draw_lines = !draw_lines;
                 if (e.key.keysym.sym == SDLK_r)      t0_ms = SDL_GetTicks(); // reinicia la ola
             }
-             if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+            if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
                 int w, h;
                 SDL_GetWindowSize(win, &w, &h);
                 float cellW = (float)w / g.cols;
                 float cellH = (float)h / g.rows;
 
-                seedCol = (int)(e.button.x / cellW);
-                seedRow = (int)(e.button.y / cellH);
-                if (seedCol < 0) seedCol = 0;
-                if (seedCol >= g.cols) seedCol = g.cols - 1;
-                if (seedRow < 0) seedRow = 0;
-                if (seedRow >= g.rows) seedRow = g.rows - 1;
+                int col = (int)(e.button.x / cellW);
+                int row = (int)(e.button.y / cellH);
+                if (col < 0) col = 0;
+                if (col >= g.cols) col = g.cols - 1;
+                if (row < 0) row = 0;
+                if (row >= g.rows) row = g.rows - 1;
 
+                if (seedCount < MAX_SEEDS) {
+                    seeds[seedCount].row = row;
+                    seeds[seedCount].col = col;
+                    seeds[seedCount].startTime = SDL_GetTicks();
+                    seedCount++;
+                }
+
+                seedRow = row;
+                seedCol = col;
                 hasSeed = true;
-                t0_ms = SDL_GetTicks(); // reinicia el tiempo, la ola comienza en la nueva semilla
             }
+
         }
 
         
@@ -449,8 +459,6 @@ int main(int argc, char**argv){
                 // Cambió de etapa, mueve la semilla a donde terminó la ola anterior
                 advance_seed_to_far_corner(&seedRow, &seedCol, g.rows, g.cols);
                 hasSeed = true;
-                // No resetea t0_ms: el tiempo global sigue y la nueva etapa arranca suave
-                // printf("Nueva etapa %d, semilla en (%d,%d)\n", stage_idx, seedRow, seedCol);
             }
             prev_stage_idx = stage_idx;
         }

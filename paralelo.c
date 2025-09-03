@@ -428,9 +428,12 @@ int main(int argc, char**argv){
 
     while (running) {
         g.grid = malloc(g.rows * sizeof(float*));
+
+        // #pragma omp parallel for 
         for (int r = 0; r < g.rows; r++) {
             g.grid[r] = malloc(g.cols * sizeof(float));
         }
+
 
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -440,22 +443,33 @@ int main(int argc, char**argv){
                 if (e.key.keysym.sym == SDLK_g)      draw_lines = !draw_lines;
                 if (e.key.keysym.sym == SDLK_r)      t0_ms = SDL_GetTicks(); // reinicia la ola
             }
-            if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
-                int w, h;
-                SDL_GetWindowSize(win, &w, &h);
-                float cellW = (float)w / g.cols;
-                float cellH = (float)h / g.rows;
+           if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+    int w, h;
+    SDL_GetWindowSize(win, &w, &h);
+    float cellW = (float)w / g.cols;
+    float cellH = (float)h / g.rows;
 
-                seedCol = (int)(e.button.x / cellW);
-                seedRow = (int)(e.button.y / cellH);
-                if (seedCol < 0) seedCol = 0;
-                if (seedCol >= g.cols) seedCol = g.cols - 1;
-                if (seedRow < 0) seedRow = 0;
-                if (seedRow >= g.rows) seedRow = g.rows - 1;
+    int col = (int)(e.button.x / cellW);
+    int row = (int)(e.button.y / cellH);
+    if (col < 0) col = 0;
+    if (col >= g.cols) col = g.cols - 1;
+    if (row < 0) row = 0;
+    if (row >= g.rows) row = g.rows - 1;
 
-                hasSeed = true;
-                t0_ms = SDL_GetTicks(); // reinicia el tiempo, la ola comienza en la nueva semilla
-            }
+    if (seedCount < MAX_SEEDS) {
+        seeds[seedCount].row = row;
+        seeds[seedCount].col = col;
+        seeds[seedCount].startTime = SDL_GetTicks();
+        seedCount++;
+    }
+
+    seedRow = row;
+    seedCol = col;
+    hasSeed = true;
+}
+
+
+
 
                     }
 
@@ -511,9 +525,15 @@ int main(int argc, char**argv){
         glClear(GL_COLOR_BUFFER_BIT);
         
 
-        // #pragma omp parallel for collapse(2)
-        if (g.rows * g.cols > 5000) {
+        if (g.rows * g.cols > 5000) { // solo se aplica cuando es necesario
+
+            // se busca mejorar la eficiencia haciendo calculos fuera de los bucles que se necesitan 1 sola vez
             Uint32 nowTicks = SDL_GetTicks();
+
+            // Este bloque usa OpenMP para paralelizar el doble bucle sobre filas y columnas del grid. La directiva `#pragma omp parallel for collapse(2) schedule(dynamic, 8)` 
+            // combina ambos bucles en uno solo (`collapse(2)`) y reparte dinámicamente las iteraciones entre los hilos en bloques de 8 (`schedule(dynamic, 8)`), de modo que cada hilo 
+            // procesa varias celdas del grid en paralelo y, al terminar, toma más iteraciones disponibles, mejorando la eficiencia cuando algunas celdas tardan más en calcularse.
+
             #pragma omp parallel for collapse(2) schedule(dynamic, 8)
             for (int r = 0; r < g.rows; r++) {
                 for (int c = 0; c < g.cols; c++) {
@@ -533,7 +553,7 @@ int main(int argc, char**argv){
                     g.grid[r][c] = value;
                 }
             }
-        }else{
+        }else{ // cuando es necesario calcular en paralelo, no se usa para que el resultado no sea contraproducente
             for (int r = 0; r < g.rows; r++) {
                 for (int c = 0; c < g.cols; c++) {
                     float value = 0.0f;
