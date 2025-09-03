@@ -228,11 +228,9 @@ static void drawGridCycle(
     GLuint UNDER = tex_cycle[stage_idx];
     GLuint OVER  = tex_cycle[(stage_idx + 1) % tex_count];
 
-    // --- Paso 1: calcular en paralelo ---
     int total = rows * cols;
     CellInfo *cells = (CellInfo*)malloc(sizeof(CellInfo) * total);
 
-    #pragma omp parallel for collapse(2)
     for (int r = 0; r < rows; ++r) {
         
         for (int c = 0; c < cols; ++c) {
@@ -256,7 +254,6 @@ static void drawGridCycle(
         }
     }
 
-    // --- Paso 2: dibujar en el hilo principal ---
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -290,12 +287,7 @@ static void drawGridCycle(
     }
 
     glDisable(GL_TEXTURE_2D);
-    free(cells);
-}
-
-
-
-
+    free(cells);}
 
 
 int main(int argc, char**argv){
@@ -435,10 +427,11 @@ int main(int argc, char**argv){
 
 
     while (running) {
-            g.grid = malloc(g.rows * sizeof(float*));
+        g.grid = malloc(g.rows * sizeof(float*));
         for (int r = 0; r < g.rows; r++) {
             g.grid[r] = malloc(g.cols * sizeof(float));
         }
+
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = false;
@@ -453,19 +446,15 @@ int main(int argc, char**argv){
                 float cellW = (float)w / g.cols;
                 float cellH = (float)h / g.rows;
 
-                int col = (int)(e.button.x / cellW);
-                int row = (int)(e.button.y / cellH);
-                if (col < 0) col = 0;
-                if (col >= g.cols) col = g.cols - 1;
-                if (row < 0) row = 0;
-                if (row >= g.rows) row = g.rows - 1;
+                seedCol = (int)(e.button.x / cellW);
+                seedRow = (int)(e.button.y / cellH);
+                if (seedCol < 0) seedCol = 0;
+                if (seedCol >= g.cols) seedCol = g.cols - 1;
+                if (seedRow < 0) seedRow = 0;
+                if (seedRow >= g.rows) seedRow = g.rows - 1;
 
-                if (seedCount < MAX_SEEDS) {
-                    seeds[seedCount].row = row;
-                    seeds[seedCount].col = col;
-                    seeds[seedCount].startTime = SDL_GetTicks();
-                    seedCount++;
-                }
+                hasSeed = true;
+                t0_ms = SDL_GetTicks(); // reinicia el tiempo, la ola comienza en la nueva semilla
             }
 
                     }
@@ -520,28 +509,51 @@ int main(int argc, char**argv){
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glClear(GL_COLOR_BUFFER_BIT);
+        
 
-        #pragma omp parallel for collapse(2)
-        for (int r = 0; r < g.rows; r++) {
-            for (int c = 0; c < g.cols; c++) {
-                float value = 0.0f;
+        // #pragma omp parallel for collapse(2)
+        if (g.rows * g.cols > 5000) {
+            Uint32 nowTicks = SDL_GetTicks();
+            #pragma omp parallel for collapse(2) schedule(dynamic, 8)
+            for (int r = 0; r < g.rows; r++) {
+                for (int c = 0; c < g.cols; c++) {
+                    float value = 0.0f;
 
-                for (int s = 0; s < seedCount; s++) {
-                    Uint32 elapsed = SDL_GetTicks() - seeds[s].startTime;
-                    float dist = sqrtf((r - seeds[s].row)*(r - seeds[s].row) +
-                                    (c - seeds[s].col)*(c - seeds[s].col));
-                    float wave = sinf(dist - elapsed * 0.01f); // velocidad ajustable
-                    value += wave;
+                    for (int s = 0; s < seedCount; s++) {
+                        Uint32 elapsed = nowTicks - seeds[s].startTime; 
+                        float dist = sqrtf((r - seeds[s].row)*(r - seeds[s].row) +
+                                        (c - seeds[s].col)*(c - seeds[s].col));
+                        float wave = sinf(dist - elapsed * 0.01f);
+                        value += wave;
+                    }
+
+                    if (value > 1.0f) value = 1.0f;
+                    if (value < -1.0f) value = -1.0f;
+
+                    g.grid[r][c] = value;
                 }
-
-                // Limitar valores si quieres
-                if (value > 1.0f) value = 1.0f;
-                if (value < -1.0f) value = -1.0f;
-
-                g.grid[r][c] = value;
             }
-        }
+        }else{
+            for (int r = 0; r < g.rows; r++) {
+                for (int c = 0; c < g.cols; c++) {
+                    float value = 0.0f;
 
+                    for (int s = 0; s < seedCount; s++) {
+                        Uint32 elapsed = SDL_GetTicks() - seeds[s].startTime;
+                        float dist = sqrtf((r - seeds[s].row)*(r - seeds[s].row) +
+                                        (c - seeds[s].col)*(c - seeds[s].col));
+                        float wave = sinf(dist - elapsed * 0.01f); // velocidad ajustable
+                        value += wave;
+                    }
+
+                    // Limitar valores si quieres
+                    if (value > 1.0f) value = 1.0f;
+                    if (value < -1.0f) value = -1.0f;
+
+                    g.grid[r][c] = value;
+                }
+            }SDL_GetTicks;
+        }
 
         drawGridCycle(tex_cycle, TEX_COUNT, stage_idx, stage_time,
                     g.rows, g.cols, w, h,

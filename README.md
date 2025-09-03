@@ -22,6 +22,15 @@ gcc -O2 secuencial.c -o sec $(sdl2-config --cflags) $(sdl2-config --libs) -lSDL2
 
 ```
 
+compilar y correr el paralelo:
+```
+
+gcc paralelo.c -o paralelo -fopenmp -lSDL2 -lSDL2_image -lSDL2_ttf -lGL -lm 
+
+./paralelo 1000
+
+```
+
 
 dependencias que instale: 
 sudo apt update
