@@ -118,7 +118,7 @@ static Grid best_grid(int n, int w, int h){
 }
 
 
-/** @brief Carga una imagen (PNG/JPG) desde disco y la sube como textura OpenGL.
+/** @brief Carga una imagen  y la sube como textura OpenGL.
  *
  * Usa SDL_image para decodificar y configura parámetros de filtrado y wrap.
  *
