@@ -34,6 +34,7 @@ static const char* grassTexture = "assets/grass_block_top_128x128.png";
 static const float TOTAL_TIME = 11.0f; //tiempo de propagacion base en sec
 static const float FADE_TIME = 0.40f; //tiempo de mezcla por celda, igual en sec
 
+
 /** @struct Grid
  *  @brief Par (filas,columnas) para particionar la ventana en celdas.
  *
@@ -516,6 +517,9 @@ int main(int argc, char**argv){
     GLuint fps_tex    = 0;
     int    fps_w = 0, fps_h = 0;
     char   fps_msg[64] = "FPS: 0.0";
+    // Medición de run completo (para FPS promedio)
+    Uint32 run_start_ms = SDL_GetTicks();
+    unsigned long long total_frames = 0ULL;  // cuenta los frames renderizados
 
     // // Carga de texturas
 
@@ -668,7 +672,16 @@ int main(int argc, char**argv){
         }
 
         SDL_GL_SwapWindow(win);
+        //sumar un frame al total
+        total_frames++;
     }
+    Uint32 run_end_ms = SDL_GetTicks();
+    double run_secs = (run_end_ms - run_start_ms) / 1000.0;
+    double avg_fps = (run_secs > 0.0) ? ( (double)total_frames / run_secs ) : 0.0;
+
+    printf("=== RESUMEN ===\n");
+    printf("Duración: %.2f s | Frames: %llu | FPS promedio: %.2f\n",
+        run_secs, total_frames, avg_fps);
 
     // Limpieza
     GLuint all[] = {dirtTex, grassTex, waterTex, iceTex, snowTex, lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex};

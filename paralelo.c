@@ -595,7 +595,9 @@ int main(int argc, char**argv){
     bool draw_lines = true;
 
     int prev_stage_idx = -1;
-
+    // Medición de run completo (para FPS promedio)
+    Uint32 run_start_ms = SDL_GetTicks();
+    unsigned long long total_frames = 0ULL;  // cuenta los frames renderizados
 
 
 
@@ -770,7 +772,16 @@ int main(int argc, char**argv){
         }
 
         SDL_GL_SwapWindow(win);
+        //sumar 1 frame al total
+        total_frames++;
     }
+    Uint32 run_end_ms = SDL_GetTicks();
+    double run_secs = (run_end_ms - run_start_ms) / 1000.0;
+    double avg_fps = (run_secs > 0.0) ? ( (double)total_frames / run_secs ) : 0.0;
+
+    printf("=== RESUMEN ===\n");
+    printf("Duración: %.2f s | Frames: %llu | FPS promedio: %.2f\n",
+        run_secs, total_frames, avg_fps);
 
     // Limpieza
     GLuint all[] = {dirtTex, grassTex, waterTex, iceTex, snowTex, lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex};
