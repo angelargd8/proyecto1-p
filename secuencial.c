@@ -115,17 +115,25 @@ static Grid best_grid(int n, int w, int h){
 
 
 static GLuint load_texture(const char* path){
+
     SDL_Surface* s = IMG_Load(path);
-    if (!s){ fprintf(stderr, "IMG_Load %s: %s\n", path, IMG_GetError()); return 0; }
+    if (!s){ 
+        fprintf(stderr, "IMG_Load %s: %s\n", path, IMG_GetError()); 
+        return 0; 
+    }
+
     GLuint tex=0; glGenTextures(1, &tex); glBindTexture(GL_TEXTURE_2D, tex);
     GLenum format = GL_RGB;
+
     if (s->format->BytesPerPixel==4) format=(s->format->Rmask==0x000000ff)?GL_RGBA:GL_BGRA;
     else if (s->format->BytesPerPixel==3) format=(s->format->Rmask==0x000000ff)?GL_RGB:GL_BGR;
+
     else {
         SDL_Surface* conv = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ABGR8888, 0);
         SDL_FreeSurface(s); s=conv; if(!s){ glDeleteTextures(1,&tex); return 0; }
         format = GL_RGBA;
     }
+
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, (format==GL_RGB||format==GL_BGR)?GL_RGB:GL_RGBA,
                  s->w, s->h, 0, format, GL_UNSIGNED_BYTE, s->pixels);
@@ -141,7 +149,9 @@ static GLuint text_to_texture(TTF_Font* font, const char* msg,
                               SDL_Color col, int* out_w, int* out_h)
 {
     SDL_Surface* src = TTF_RenderUTF8_Blended(font, msg, col);
+
     if (!src) return 0;
+
     SDL_Surface* s = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ABGR8888, 0);
     SDL_FreeSurface(src); if (!s) return 0;
 
@@ -152,7 +162,9 @@ static GLuint text_to_texture(TTF_Font* font, const char* msg,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
     if (out_w) *out_w = s->w; if (out_h) *out_h = s->h;
+
     SDL_FreeSurface(s);
     return tex;
 }
@@ -191,10 +203,23 @@ static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int
     int sr=*seedRow, sc=*seedCol;
     int d00=sr+sc, d01=sr+(cols-1-sc), d10=(rows-1-sr)+sc, d11=(rows-1-sr)+(cols-1-sc);
     int r=0,c=0,maxd=d00;
-    if (d01>maxd){maxd=d01;r=0;        c=cols-1;}
-    if (d10>maxd){maxd=d10;r=rows-1;   c=0;}
-    if (d11>maxd){maxd=d11;r=rows-1;   c=cols-1;}
-    *seedRow=r; *seedCol=c;
+    if (d01>maxd){
+        maxd=d01;
+        r=0;
+        c=cols-1;
+    }
+    if (d10>maxd){
+        maxd=d10;
+        r=rows-1;
+        c=0;
+    }
+    if (d11>maxd){
+        maxd=d11;
+        r=rows-1;
+        c=cols-1;
+    }
+    *seedRow=r;
+    *seedCol=c;
 }
 
 
@@ -279,14 +304,27 @@ int main(int argc, char**argv){
     bool hasSeed = true;
 
 
-    if (argc < 2) { fprintf(stderr, "Uso: %s <n>\n", argv[0]); return 1; }
+    if (argc < 2) { 
+        fprintf(stderr, "Uso: %s <n>\n", argv[0]);
+        return 1; 
+    }
     int n = atoi(argv[1]);
-    if (n <= 4) { fprintf(stderr,"n debe ser > 4\n"); return 1; }
+    if (n <= 4) { 
+        fprintf(stderr,"n debe ser > 4\n"); 
+        return 1; 
+    }
 
     // SDL/IMG
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); return 1; }
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) { 
+        fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); 
+        return 1; 
+    }
     int img_flags = IMG_INIT_PNG | IMG_INIT_JPG;
-    if ((IMG_Init(img_flags) & img_flags) == 0) { fprintf(stderr,"IMG_Init: %s\n", IMG_GetError()); SDL_Quit(); return 1; }
+    if ((IMG_Init(img_flags) & img_flags) == 0) { 
+        fprintf(stderr,"IMG_Init: %s\n", IMG_GetError()); 
+        SDL_Quit(); 
+        return 1; 
+    }
 
     //
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -295,13 +333,24 @@ int main(int argc, char**argv){
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 
-    SDL_Window *win = SDL_CreateWindow("Screensaver OMP (por celda)",
+    SDL_Window *win = SDL_CreateWindow("Screensaver",
                       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                       1536, 1024, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    if (!win) { fprintf(stderr,"SDL_CreateWindow: %s\n", SDL_GetError()); IMG_Quit(); SDL_Quit(); return 1; }
+    if (!win) { 
+        fprintf(stderr,"SDL_CreateWindow: %s\n", SDL_GetError()); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1; 
+    }
 
     SDL_GLContext glc = SDL_GL_CreateContext(win);
-    if (!glc) { fprintf(stderr,"SDL_GL_CreateContext: %s\n", SDL_GetError()); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+    if (!glc) { 
+        fprintf(stderr,"SDL_GL_CreateContext: %s\n", SDL_GetError()); 
+        SDL_DestroyWindow(win); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1; 
+    }
 
     // VSync ON
     SDL_GL_SetSwapInterval(1);
@@ -334,18 +383,35 @@ int main(int argc, char**argv){
     if (TTF_Init() != 0) { fprintf(stderr,"TTF_Init: %s\n", TTF_GetError());
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
-        free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
-        SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+        free_grid2d(B, B_back); 
+        free_grid2d(g.grid, A_back);
+        SDL_GL_DeleteContext(glc); 
+        
+        SDL_DestroyWindow(win); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1; 
+    }
+
     TTF_Font* font = open_font_portable(18);
     if (!font) { fprintf(stderr,"No pude abrir fuente: %s\n", TTF_GetError());
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
         free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
-        TTF_Quit(); SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+        TTF_Quit(); 
+        SDL_GL_DeleteContext(glc); 
+        SDL_DestroyWindow(win); 
+        IMG_Quit(); SDL_Quit(); 
+        return 1; 
+    }
 
     // HUD FPS
-    Uint32 fps_t0 = SDL_GetTicks(); int fps_frames=0; float fps_value=0.f;
-    GLuint fps_tex=0; int fps_w=0, fps_h=0; char fps_msg[64]="FPS: 0.0";
+    Uint32 fps_t0 = SDL_GetTicks(); 
+    int fps_frames=0; 
+    float fps_value=0.f;
+    GLuint fps_tex=0; 
+    int fps_w=0, fps_h=0; 
+    char fps_msg[64]="FPS: 0.0";
 
     // Texturas
     GLuint dirtTex=load_texture(dirtTexture),   grassTex=load_texture(grassTexture);
@@ -353,6 +419,7 @@ int main(int argc, char**argv){
     GLuint iceTex=load_texture(iceTexture),     lavaTex=load_texture(lavaTexture);
     GLuint diamondTex=load_texture(diamondTexture), obsidianTex=load_texture(obsidianTexture);
     GLuint endStoneTex=load_texture(endStoneTexture), jackTex=load_texture(jackoLanternTexture);
+
     if (!dirtTex||!grassTex||!waterTex||!snowTex||!iceTex||!lavaTex||!diamondTex||!obsidianTex||!endStoneTex||!jackTex){
         fprintf(stderr,"Fallo al cargar texturas\n");
         GLuint all[] = {dirtTex,grassTex,waterTex,iceTex,snowTex,lavaTex,diamondTex,obsidianTex,endStoneTex,jackTex};
@@ -360,8 +427,13 @@ int main(int argc, char**argv){
         TTF_CloseFont(font); TTF_Quit();
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
-        free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
-        SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1;
+        free_grid2d(B, B_back); 
+        free_grid2d(g.grid, A_back);
+        SDL_GL_DeleteContext(glc); 
+        SDL_DestroyWindow(win); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1;
     }
     GLuint tex_cycle[TEX_COUNT] = { dirtTex, grassTex, waterTex, iceTex, snowTex,
                                     lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex };
@@ -394,7 +466,7 @@ int main(int argc, char**argv){
                 }
                 seedRow=row; seedCol=col; hasSeed=true;
             }
-            
+
         }
 
         // Etapas 
@@ -488,8 +560,11 @@ int main(int argc, char**argv){
         // DIBUJO 
         int w,h; SDL_GetWindowSize(win, &w, &h);
         glViewport(0, 0, w, h);
-        glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0.0, (GLdouble)w, (GLdouble)h, 0.0, -1.0, 1.0);
-        glMatrixMode(GL_MODELVIEW);  glLoadIdentity();
+        glMatrixMode(GL_PROJECTION); 
+        glLoadIdentity(); 
+        glOrtho(0.0, (GLdouble)w, (GLdouble)h, 0.0, -1.0, 1.0);
+        glMatrixMode(GL_MODELVIEW);  
+        glLoadIdentity();
         glClear(GL_COLOR_BUFFER_BIT);
 
         drawGridCycle(tex_cycle, TEX_COUNT, stage_idx, stage_time,
@@ -535,7 +610,7 @@ int main(int argc, char**argv){
            run_secs, total_frames, avg_fps);
 
     // Limpieza
-    GLuint all[] = {dirtTex,grassTex,waterTex,iceTex,snowTex,lavaTex,diamondTex,obsidianTex,endStoneTex,jackTex};
+    GLuint all[] = {dirtTex, grassTex, waterTex, iceTex, snowTex, lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex};
     glDeleteTextures(sizeof all/sizeof all[0], all);
     if (fps_tex) glDeleteTextures(1, &fps_tex);
 

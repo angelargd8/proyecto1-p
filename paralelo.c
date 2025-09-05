@@ -66,7 +66,10 @@ static inline int   clampi (int v,int lo,int hi){ return v<lo?lo:(v>hi?hi:v); }
 static float** alloc_grid2d(int rows, int cols, float** backing_out) {
     float **ptrs = (float**)malloc(rows * sizeof(float*));
     float *data  = (float*)malloc(rows * cols * sizeof(float));
-    if (!ptrs || !data) { fprintf(stderr,"alloc_grid2d: OOM\n"); exit(1); }
+    if (!ptrs || !data) { 
+        fprintf(stderr,"alloc_grid2d: OOM\n"); 
+        exit(1); 
+    }
     for (int r = 0; r < rows; ++r) ptrs[r] = data + r*cols;
     *backing_out = data;
     return ptrs;
@@ -78,12 +81,17 @@ static void free_grid2d(float **ptrs, float *backing) {
 
 // 
 static int** alloc_grid2d_i(int rows, int cols, int** backing_out) {
+
     int **ptrs = (int**)malloc(rows * sizeof(int*));
     int *data  = (int*)malloc(rows * cols * sizeof(int));
-    if (!ptrs || !data) { fprintf(stderr,"alloc_grid2d_i: OOM\n"); exit(1); }
+    if (!ptrs || !data) { 
+        fprintf(stderr,"alloc_grid2d_i: OOM\n"); 
+        exit(1); 
+    }
     for (int r = 0; r < rows; ++r) ptrs[r] = data + r*cols;
     *backing_out = data;
     return ptrs;
+
 }
 static void free_grid2d_i(int **ptrs, int *backing) {
     if (backing) free(backing);
@@ -98,18 +106,30 @@ static inline void swap_rows(float ***A, float ***B){
 //  Grid ideal 
 static Grid best_grid(int n, int w, int h){
     if (n<=0 ) return (Grid){0,0,NULL};
+
     if (w<=0 || h<=0) return (Grid){1,n,NULL};
-    double aspect = (double)w/(double)h;
+
+    double aspect = (double)w / (double)h;
+
     Grid best = (Grid){1,n,NULL};
     double best_err = fabs(((double)best.cols/(double)best.rows) - aspect);
+
     for (int d=1; d*d<=n; ++d){
+
         if (n % d) continue;
         int r1 = d, c1 = n/d;
         double e1 = fabs(((double)c1/(double)r1) - aspect);
-        if (e1 < best_err){ best=(Grid){r1,c1,NULL}; best_err=e1; }
+        if (e1 < best_err){ 
+            best=(Grid){r1,c1,NULL};
+            best_err=e1; 
+        }
         int r2 = n/d, c2 = d;
         double e2 = fabs(((double)c2/(double)r2) - aspect);
-        if (e2 < best_err){ best=(Grid){r2,c2,NULL}; best_err=e2; }
+        if (e2 < best_err){ 
+            best=(Grid){r2,c2,NULL}; 
+            best_err=e2; 
+        }
+
     }
     return best;
 }
@@ -117,11 +137,16 @@ static Grid best_grid(int n, int w, int h){
 //  OpenGL helpers 
 static GLuint load_texture(const char* path){
     SDL_Surface* s = IMG_Load(path);
-    if (!s){ fprintf(stderr, "IMG_Load %s: %s\n", path, IMG_GetError()); return 0; }
+    if (!s){ 
+        fprintf(stderr, "IMG_Load %s: %s\n", path, IMG_GetError()); 
+        return 0; 
+    }
+
     GLuint tex=0; glGenTextures(1, &tex); glBindTexture(GL_TEXTURE_2D, tex);
     GLenum format = GL_RGB;
     if (s->format->BytesPerPixel==4) format=(s->format->Rmask==0x000000ff)?GL_RGBA:GL_BGRA;
     else if (s->format->BytesPerPixel==3) format=(s->format->Rmask==0x000000ff)?GL_RGB:GL_BGR;
+    
     else {
         SDL_Surface* conv = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ABGR8888, 0);
         SDL_FreeSurface(s); s=conv; if(!s){ glDeleteTextures(1,&tex); return 0; }
@@ -144,6 +169,7 @@ static GLuint text_to_texture(TTF_Font* font, const char* msg,
 {
     SDL_Surface* src = TTF_RenderUTF8_Blended(font, msg, col);
     if (!src) return 0;
+
     SDL_Surface* s = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ABGR8888, 0);
     SDL_FreeSurface(src); if (!s) return 0;
 
@@ -195,10 +221,23 @@ static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int
     int sr=*seedRow, sc=*seedCol;
     int d00=sr+sc, d01=sr+(cols-1-sc), d10=(rows-1-sr)+sc, d11=(rows-1-sr)+(cols-1-sc);
     int r=0,c=0,maxd=d00;
-    if (d01>maxd){maxd=d01;r=0;        c=cols-1;}
-    if (d10>maxd){maxd=d10;r=rows-1;   c=0;}
-    if (d11>maxd){maxd=d11;r=rows-1;   c=cols-1;}
-    *seedRow=r; *seedCol=c;
+    if (d01>maxd){
+        maxd=d01;
+        r=0;
+        c=cols-1;
+    }
+    if (d10>maxd){
+        maxd=d10;
+        r=rows-1;
+        c=0;
+    }
+    if (d11>maxd){
+        maxd=d11;
+        r=rows-1;
+        c=cols-1;
+    }
+    *seedRow=r;
+    *seedCol=c;
 }
 
 // Dibujo por celda con latch de textura
@@ -253,7 +292,7 @@ static void drawGridCycle(
               glTexCoord2f(0.f, 1.f); glVertex2f(x,          y+cellH);
             glEnd();
 
-            // Overlay (OVER) con leve tinte por hval
+            // Overlay (OVER)
             if (alpha > 0.f) {
                 glBindTexture(GL_TEXTURE_2D, tex_cycle[overIdx]);
                 glColor4f(1.f, 0.9f - 0.4f*hval, 0.9f - 0.4f*hval, alpha);
@@ -309,7 +348,7 @@ int main(int argc, char**argv){
     SDL_GLContext glc = SDL_GL_CreateContext(win);
     if (!glc) { fprintf(stderr,"SDL_GL_CreateContext: %s\n", SDL_GetError()); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
 
-    // VSync: mejor desactivarlo si vas a medir compute puro
+    // VSync
     SDL_GL_SetSwapInterval(1);
 
     glDisable(GL_DEPTH_TEST);
@@ -359,6 +398,7 @@ int main(int argc, char**argv){
     GLuint iceTex=load_texture(iceTexture),     lavaTex=load_texture(lavaTexture);
     GLuint diamondTex=load_texture(diamondTexture), obsidianTex=load_texture(obsidianTexture);
     GLuint endStoneTex=load_texture(endStoneTexture), jackTex=load_texture(jackoLanternTexture);
+    
     if (!dirtTex||!grassTex||!waterTex||!snowTex||!iceTex||!lavaTex||!diamondTex||!obsidianTex||!endStoneTex||!jackTex){
         fprintf(stderr,"Fallo al cargar texturas\n");
         GLuint all[] = {dirtTex,grassTex,waterTex,iceTex,snowTex,lavaTex,diamondTex,obsidianTex,endStoneTex,jackTex};

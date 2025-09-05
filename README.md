@@ -22,12 +22,12 @@ compilar y correr el secuencial:
 gcc -O2 secuencial.c -o sec $(sdl2-config --cflags) $(sdl2-config --libs) -lSDL2_image -lSDL2_ttf -lGL -lGLU -lm && ./sec 1000
 
 ```
+gcc -O3 -march=native -ffast-math -funroll-loops secuencial.c -o secuencial  $(pkg-config --cflags --libs sdl2 SDL2_image SDL2_ttf)  -lGL -lGLU -lm && ./sec 1000
 
 compilar y correr el paralelo:
 ```
 
-gcc paralelo.c -o paralelo -fopenmp -lSDL2 -lSDL2_image -lSDL2_ttf -lGL -lm && ./paralelo 1000
+gcc -Ofast -march=native -ffast-math -fno-math-errno -funroll-loops   -fopenmp paralelo.c -o paralelo   $(pkg-config --cflags --libs sdl2 SDL2_image SDL2_ttf) -lGL -lGLU -lm && ./paralelo 20000
 
 ```
-
 
