@@ -59,9 +59,15 @@ static Seed seeds[MAX_SEEDS];
 static int   seedCount = 0;
 
 // Utils 
+// Limita un float al rango [0,1]. es el  x Valor a limitar.
 static inline float clamp01(float x){ return x<0.f?0.f:(x>1.f?1.f:x); }
+// limita un entero al rango [lo, hi], b es el valor a limitar y lo y hi son los limites
 static inline int   clampi (int v,int lo,int hi){ return v<lo?lo:(v>hi?hi:v); }
 
+/*
+reserva una matriz de floats de rows x cols,
+devuelve un puntero a la tabla de punteros y un puntero a la data contigua
+*/
 static float** alloc_grid2d(int rows, int cols, float** backing_out) {
     float **ptrs = (float**)malloc(rows * sizeof(float*));
     float *data  = (float*)malloc(rows * cols * sizeof(float));
@@ -70,12 +76,19 @@ static float** alloc_grid2d(int rows, int cols, float** backing_out) {
     *backing_out = data;
     return ptrs;
 }
+
+/*
+Libera una matriz de floats creada por alloc_grid2d 
+*/
 static void free_grid2d(float **ptrs, float *backing) {
     if (backing) free(backing);
     if (ptrs)    free(ptrs);
 }
 
-// 
+/*
+reserva una matriz de int de rows x cols, 
+devuelve un puntero a la tabla de punteros y un puntero a la data contigua
+*/
 static int** alloc_grid2d_i(int rows, int cols, int** backing_out) {
     int **ptrs = (int**)malloc(rows * sizeof(int*));
     int *data  = (int*)malloc(rows * cols * sizeof(int));
@@ -84,6 +97,10 @@ static int** alloc_grid2d_i(int rows, int cols, int** backing_out) {
     *backing_out = data;
     return ptrs;
 }
+
+/*
+Libera una matriz de int creada por alloc_grid2d_i 
+*/
 static void free_grid2d_i(int **ptrs, int *backing) {
     if (backing) free(backing);
     if (ptrs)    free(ptrs);
@@ -94,7 +111,10 @@ static inline void swap_rows(float ***A, float ***B){
     float **tmp = *A; *A = *B; *B = tmp;
 }
 
-//  Grid ideal
+/*
+Calcula el mejor grid para colocar n elementos intentando
+aproximar el aspecto de (ancho:alto)
+*/
 static Grid best_grid(int n, int w, int h){
     if (n<=0 ) return (Grid){0,0,NULL};
     if (w<=0 || h<=0) return (Grid){1,n,NULL};
@@ -114,6 +134,11 @@ static Grid best_grid(int n, int w, int h){
 }
 
 
+/*
+Carga una imagen y la sube como textura de OpenGL y 
+usa la SDL_image para decodificar y configura los parámetros 
+de filtrado y wrap 
+*/
 static GLuint load_texture(const char* path){
 
     SDL_Surface* s = IMG_Load(path);
@@ -145,6 +170,10 @@ static GLuint load_texture(const char* path){
     return tex;
 }
 
+/*
+Genera una textura con color con el texto del msg usando el 
+font y el color de los parámetros. 
+*/
 static GLuint text_to_texture(TTF_Font* font, const char* msg,
                               SDL_Color col, int* out_w, int* out_h)
 {
@@ -169,6 +198,9 @@ static GLuint text_to_texture(TTF_Font* font, const char* msg,
     return tex;
 }
 
+/*
+Dibuja un quad 2D texturizado en coordenadas de la pantalla 
+*/
 static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
@@ -184,6 +216,7 @@ static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
     glDisable(GL_TEXTURE_2D);
 }
 
+// Abre una fuente TTF buscando en la ruta 
 static TTF_Font* open_font_portable(int ptsize) {
     const char* rel = "assets/DejaVuSans.ttf";
     char *base = SDL_GetBasePath();
@@ -199,6 +232,11 @@ static TTF_Font* open_font_portable(int ptsize) {
 }
 
 // Semilla a esquina más lejana 
+/*
+Mueve la celda a la esquina Manhattan más lejana, 
+calcula la distancia Manhattan a la semilla actual 
+que sea máxima y actualiza la semilla a esa celda. 
+*/
 static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int cols) {
     int sr=*seedRow, sc=*seedCol;
     int d00=sr+sc, d01=sr+(cols-1-sc), d10=(rows-1-sr)+sc, d11=(rows-1-sr)+(cols-1-sc);
@@ -223,6 +261,13 @@ static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int
 }
 
 
+/*
+Dibuja un grid de celdas mezclando texturas por celda y avanza latch
+digamos que cada celda tiene una textura base y una overlay,
+entonces para cada celda se calcula el pulso de mezcla y se aplica
+desde una textura  a la siguiente textuea siguiendo una onda temporal 
+basada en la distancia Manhattan a una semilla
+*/
 static void drawGridCycle(
     GLuint *tex_cycle, int tex_count,
     int global_stage_idx, float stage_time,
@@ -298,6 +343,15 @@ static void drawGridCycle(
 }
 
 //  Main 
+/*
+inicializa SDL y OpenGL
+crea el grid
+ejecuta el looop principal
+inicializa SDL, las imagenes SDL_ttf para mostrar los FPS
+determina las rows y cols del grid con best grid
+en cada frame procesa eventos, actualiza la simulacion y dibuja
+por ultimo imprime el resumen de la ejecucion y libera recursos
+*/
 int main(int argc, char**argv){
     // Semilla inicial para que la ola exista desde el primer frame
     int  seedRow = 0, seedCol = 0;
