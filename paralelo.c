@@ -387,9 +387,16 @@ int main(int argc, char**argv){
     if (n <= 4) { fprintf(stderr,"n debe ser > 4\n"); return 1; }
 
     // SDL/IMG
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); return 1; }
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) { 
+        fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); 
+        return 1; 
+    }
     int img_flags = IMG_INIT_PNG | IMG_INIT_JPG;
-    if ((IMG_Init(img_flags) & img_flags) == 0) { fprintf(stderr,"IMG_Init: %s\n", IMG_GetError()); SDL_Quit(); return 1; }
+    if ((IMG_Init(img_flags) & img_flags) == 0) { 
+        fprintf(stderr,"IMG_Init: %s\n", IMG_GetError()); 
+        SDL_Quit(); 
+        return 1; 
+    }
 
     // OpenGL 
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -401,10 +408,21 @@ int main(int argc, char**argv){
     SDL_Window *win = SDL_CreateWindow("Screensaver",
                       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                       1536, 1024, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    if (!win) { fprintf(stderr,"SDL_CreateWindow: %s\n", SDL_GetError()); IMG_Quit(); SDL_Quit(); return 1; }
+    if (!win) { 
+        fprintf(stderr,"SDL_CreateWindow: %s\n", SDL_GetError()); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1; 
+    }
 
     SDL_GLContext glc = SDL_GL_CreateContext(win);
-    if (!glc) { fprintf(stderr,"SDL_GL_CreateContext: %s\n", SDL_GetError()); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+    if (!glc) { 
+        fprintf(stderr,"SDL_GL_CreateContext: %s\n", SDL_GetError()); 
+        SDL_DestroyWindow(win); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1; 
+    }
 
     // VSync
     SDL_GL_SetSwapInterval(1);
@@ -416,13 +434,13 @@ int main(int argc, char**argv){
     int w0,h0; SDL_GetWindowSize(win,&w0,&h0);
     Grid g = best_grid(n, w0, h0);
 
-    // Reserva persistente A y B (filas apuntan a bloques contiguos)
+    // Reserva persistente A y B filas apuntan a bloques contiguos
     float *A_back=NULL, *B_back=NULL;
     g.grid = alloc_grid2d(g.rows, g.cols, &A_back);
     float **B = alloc_grid2d(g.rows, g.cols, &B_back);
     for (int r=0; r<g.rows; ++r) for (int c=0; c<g.cols; ++c) g.grid[r][c]=0.0f;
 
-    // ====== NUEVO: estado de textura por celda ======
+    //estado de textura por celda 
     int *texBase_back=NULL, *latched_back=NULL;
     int **texBase = alloc_grid2d_i(g.rows, g.cols, &texBase_back);
     int **lastLatchedStage = alloc_grid2d_i(g.rows, g.cols, &latched_back);
@@ -437,14 +455,28 @@ int main(int argc, char**argv){
     if (TTF_Init() != 0) { fprintf(stderr,"TTF_Init: %s\n", TTF_GetError());
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
-        free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
-        SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+        free_grid2d(B, B_back); 
+        free_grid2d(g.grid, A_back);
+        SDL_GL_DeleteContext(glc); 
+        SDL_DestroyWindow(win); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1; 
+    }
+
     TTF_Font* font = open_font_portable(18);
     if (!font) { fprintf(stderr,"No pude abrir fuente: %s\n", TTF_GetError());
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
-        free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
-        TTF_Quit(); SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
+        free_grid2d(B, B_back); 
+        free_grid2d(g.grid, A_back);
+        TTF_Quit(); 
+        SDL_GL_DeleteContext(glc); 
+        SDL_DestroyWindow(win); 
+        IMG_Quit(); 
+        SDL_Quit(); 
+        return 1; 
+    }
 
     // HUD FPS
     Uint32 fps_t0 = SDL_GetTicks(); int fps_frames=0; float fps_value=0.f;
@@ -573,7 +605,7 @@ int main(int argc, char**argv){
                 #pragma omp barrier
             }
 
-            //  Gauss 3×3 (opcional)
+            //  Gauss 3×3
             #if USE_GAUSS_BLUR
             for (int it = 0; it < GAUSS_ITERS; ++it) {
                 #pragma omp for schedule(static)
@@ -597,11 +629,14 @@ int main(int argc, char**argv){
             #endif
         } 
 
-        // DIBUJO 
+        // dibujo 
         int w,h; SDL_GetWindowSize(win, &w, &h);
         glViewport(0, 0, w, h);
-        glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0.0, (GLdouble)w, (GLdouble)h, 0.0, -1.0, 1.0);
-        glMatrixMode(GL_MODELVIEW);  glLoadIdentity();
+        glMatrixMode(GL_PROJECTION); 
+        glLoadIdentity(); 
+        glOrtho(0.0, (GLdouble)w, (GLdouble)h, 0.0, -1.0, 1.0);
+        glMatrixMode(GL_MODELVIEW);  
+        glLoadIdentity();
         glClear(GL_COLOR_BUFFER_BIT);
 
         drawGridCycle(tex_cycle, TEX_COUNT, stage_idx, stage_time,
@@ -638,6 +673,7 @@ int main(int argc, char**argv){
         //sumar 1 frame al total
         total_frames++;
     }
+    
 
     Uint32 run_end_ms = SDL_GetTicks();
     double run_secs = (run_end_ms - run_start_ms) / 1000.0;
