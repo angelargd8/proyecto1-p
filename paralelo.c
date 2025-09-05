@@ -371,24 +371,40 @@ static void drawGridCycle(
     float cellW = (float)w / (float)cols;
     float cellH = (float)h / (float)rows;
 
+ 
+    #pragma omp parallel for collapse(2)
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
-            // --- Distancia Euclidiana ---
+
             float dist;
-            if (hasSeed) {
-                float dr = (float)(r - seedRow);
-                float dc = (float)(c - seedCol);
-                dist = sqrtf(dr * dr + dc * dc);
+
+            if (seedCount > 0) {
+                // --- Distancia mínima a todas las semillas ---
+                float minDist = 1e9f;
+                for (int s = 0; s < seedCount; s++) {
+                    float dr = (float)(r - seeds[s].row);
+                    float dc = (float)(c - seeds[s].col);
+                    float d = sqrtf(dr * dr + dc * dc);  // Euclidiana
+                    if (d < minDist) {
+                        minDist = d;
+                    }
+                }
+                dist = minDist;
             } else {
-                // Si no hay semilla, usar la diagonal como "onda central"
+                // --- Caso sin semillas: usar diagonal como onda central ---
                 float dr = (float)r;
                 float dc = (float)c;
                 dist = sqrtf(dr * dr + dc * dc);
             }
 
             // --- Onda sinusoidal ---
+            float value = sinf(r * 0.1f + stage_time) * cosf(c * 0.1f - stage_time);
+            float plasma = (value + 1.0f) / 2.0f; // ruido "plasma"
+
             float wave = sinf(dist - stage_time * 5.0f);
-            float alpha = (wave + 1.0f) / 2.0f; // normalizado a [0,1]
+            float radial = (wave + 1.0f) / 2.0f;
+
+            float alpha = (plasma * 0.5f) + (radial * 0.5f); // mezcla ambos
 
             float x = c * cellW;
             float y = r * cellH;
