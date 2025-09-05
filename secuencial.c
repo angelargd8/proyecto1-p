@@ -320,17 +320,23 @@ static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int
     *seedCol = c;
 }
 
-/** @brief Dibuja una malla de celdas que hacen "fade" desde una textura a la siguiente
- *         siguiendo una onda temporal basada en distancia Manhattan a una semilla.
+/** @brief Dibuja una malla de celdas que hacen "fade" entre texturas
+ *         siguiendo una onda sinusoidal radial respecto a una semilla.
  *
- * Para cada celda calcula el instante de inicio @c start_t = d*dt (con dt en función
- * de TOTAL_TIME y la distancia Manhattan máxima) y mezcla desde @p UNDER (etapa actual)
- * hacia @p OVER (siguiente etapa) durante FADE_TIME.
+ * Para cada celda calcula la distancia Euclidiana @c dist desde la semilla
+ * (o desde (0,0) si @p hasSeed es false). Esa distancia se combina con el
+ * tiempo de etapa @p stage_time para generar una onda radial:
+ *
+ *     wave  = sinf(dist - stage_time * 5.0f);
+ *     alpha = (wave + 1.0f) / 2.0f;   // normalizado a [0,1]
+ *
+ * Luego se mezcla la textura base @p UNDER (etapa actual) con la textura
+ * @p OVER (siguiente etapa) usando @c alpha como factor de transparencia.
  *
  * @param tex_cycle   Arreglo circular de texturas de tamaño @p tex_count.
  * @param tex_count   Número total de texturas en el ciclo (>=2).
  * @param stage_idx   Índice de la textura base (UNDER) para la etapa actual.
- * @param stage_time  Tiempo transcurrido dentro de la etapa [0, TOTAL_TIME+FADE_TIME).
+ * @param stage_time  Tiempo transcurrido dentro de la etapa (en segundos).
  * @param rows        Filas del grid.
  * @param cols        Columnas del grid.
  * @param w           Ancho de la ventana en píxeles.
@@ -344,8 +350,9 @@ static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int
  * @post  Dibuja todo el grid en el framebuffer actual.
  *
  * @note  UNDER = tex_cycle[stage_idx], OVER = tex_cycle[(stage_idx+1)%tex_count].
- * @note  dt = TOTAL_TIME / ((rows - 1) + (cols - 1)).
+ * @note  El efecto visual es una onda radial pulsante que se propaga desde la semilla.
  */
+
 static void drawGridCycle(
     GLuint *tex_cycle, int tex_count,
     int stage_idx, float stage_time,
@@ -354,8 +361,6 @@ static void drawGridCycle(
 ) {
     if (rows <= 0 || cols <= 0) return;
 
-    int maxDist = (rows - 1) + (cols - 1);
-
     GLuint UNDER = tex_cycle[stage_idx];
     GLuint OVER  = tex_cycle[(stage_idx + 1) % tex_count];
 
@@ -363,32 +368,32 @@ static void drawGridCycle(
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+    float cellW = (float)w / (float)cols;
+    float cellH = (float)h / (float)rows;
+
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
-            float dt = (maxDist > 0) ? (TOTAL_TIME / (float)maxDist) : 0.0f;
-
-            float cellW = (float)w / (float)cols;
-            float cellH = (float)h / (float)rows;
-
-            int d;
+            // --- Distancia Euclidiana ---
+            float dist;
             if (hasSeed) {
-                d = abs(r - seedRow) + abs(c - seedCol);
+                float dr = (float)(r - seedRow);
+                float dc = (float)(c - seedCol);
+                dist = sqrtf(dr * dr + dc * dc);
             } else {
-                d = r + c;
-            }
-            float start_t = d * dt;
-
-            float alpha = 0.f;
-            if (d == 0) {
-                alpha = 1.f;
-            } else if (stage_time > start_t) {
-                alpha = (FADE_TIME > 0.f) ? (stage_time - start_t) / FADE_TIME : 1.f;
-                if (alpha > 1.f) alpha = 1.f;
-                if (alpha < 0.f) alpha = 0.f;
+                // Si no hay semilla, usar la diagonal como "onda central"
+                float dr = (float)r;
+                float dc = (float)c;
+                dist = sqrtf(dr * dr + dc * dc);
             }
 
-            float x = c * cellW, y = r * cellH;
+            // --- Onda sinusoidal ---
+            float wave = sinf(dist - stage_time * 5.0f);
+            float alpha = (wave + 1.0f) / 2.0f; // normalizado a [0,1]
 
+            float x = c * cellW;
+            float y = r * cellH;
+
+            // Dibujar fondo
             glBindTexture(GL_TEXTURE_2D, UNDER);
             glColor4f(1.f, 1.f, 1.f, 1.f);
             glBegin(GL_QUADS);
@@ -398,7 +403,8 @@ static void drawGridCycle(
                 glTexCoord2f(0.f, 1.f); glVertex2f(x,          y + cellH);
             glEnd();
 
-            if (alpha > 0.f) {
+            // Dibujar capa superior con onda
+            if (alpha > 0.01f) {
                 glBindTexture(GL_TEXTURE_2D, OVER);
                 glColor4f(1.f, 1.f, 1.f, alpha);
                 glBegin(GL_QUADS);
