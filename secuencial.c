@@ -71,7 +71,10 @@ devuelve un puntero a la tabla de punteros y un puntero a la data contigua
 static float** alloc_grid2d(int rows, int cols, float** backing_out) {
     float **ptrs = (float**)malloc(rows * sizeof(float*));
     float *data  = (float*)malloc(rows * cols * sizeof(float));
-    if (!ptrs || !data) { fprintf(stderr,"alloc_grid2d: OOM\n"); exit(1); }
+    if (!ptrs || !data) { 
+        fprintf(stderr,"alloc_grid2d: OOM\n"); 
+        exit(1); 
+    }
     for (int r = 0; r < rows; ++r) ptrs[r] = data + r*cols;
     *backing_out = data;
     return ptrs;
@@ -92,7 +95,10 @@ devuelve un puntero a la tabla de punteros y un puntero a la data contigua
 static int** alloc_grid2d_i(int rows, int cols, int** backing_out) {
     int **ptrs = (int**)malloc(rows * sizeof(int*));
     int *data  = (int*)malloc(rows * cols * sizeof(int));
-    if (!ptrs || !data) { fprintf(stderr,"alloc_grid2d_i: OOM\n"); exit(1); }
+    if (!ptrs || !data) { 
+        fprintf(stderr,"alloc_grid2d_i: OOM\n"); 
+        exit(1); 
+    }
     for (int r = 0; r < rows; ++r) ptrs[r] = data + r*cols;
     *backing_out = data;
     return ptrs;
@@ -108,7 +114,9 @@ static void free_grid2d_i(int **ptrs, int *backing) {
 
 // swap O(1) de tablas de punteros (A <-> B)
 static inline void swap_rows(float ***A, float ***B){
-    float **tmp = *A; *A = *B; *B = tmp;
+    float **tmp = *A; 
+    *A = *B; 
+    *B = tmp;
 }
 
 /*
@@ -117,18 +125,28 @@ aproximar el aspecto de (ancho:alto)
 */
 static Grid best_grid(int n, int w, int h){
     if (n<=0 ) return (Grid){0,0,NULL};
+
     if (w<=0 || h<=0) return (Grid){1,n,NULL};
+
     double aspect = (double)w/(double)h;
+
     Grid best = (Grid){1,n,NULL};
     double best_err = fabs(((double)best.cols/(double)best.rows) - aspect);
+
     for (int d=1; d*d<=n; ++d){
         if (n % d) continue;
         int r1 = d, c1 = n/d;
         double e1 = fabs(((double)c1/(double)r1) - aspect);
-        if (e1 < best_err){ best=(Grid){r1,c1,NULL}; best_err=e1; }
+        if (e1 < best_err){ 
+            best=(Grid){r1,c1,NULL}; 
+            best_err=e1; 
+        }
         int r2 = n/d, c2 = d;
         double e2 = fabs(((double)c2/(double)r2) - aspect);
-        if (e2 < best_err){ best=(Grid){r2,c2,NULL}; best_err=e2; }
+        if (e2 < best_err){ 
+            best=(Grid){r2,c2,NULL}; 
+            best_err=e2; 
+        }
     }
     return best;
 }
@@ -510,7 +528,8 @@ int main(int argc, char**argv){
                 if (e.key.keysym.sym == SDLK_r)      t0_ms = SDL_GetTicks();
             }
             if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
-                int w,h; SDL_GetWindowSize(win,&w,&h);
+                int w,h; 
+                SDL_GetWindowSize(win,&w,&h);
                 float cellW=(float)w / g.cols, cellH=(float)h / g.rows;
                 int col=(int)(e.button.x / cellW), row=(int)(e.button.y / cellH);
                 col = clampi(col,0,g.cols-1); row = clampi(row,0,g.rows-1);

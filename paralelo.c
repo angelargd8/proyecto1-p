@@ -175,7 +175,11 @@ static GLuint load_texture(const char* path){
     
     else {
         SDL_Surface* conv = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ABGR8888, 0);
-        SDL_FreeSurface(s); s=conv; if(!s){ glDeleteTextures(1,&tex); return 0; }
+        SDL_FreeSurface(s); s=conv; 
+        if(!s){ 
+            glDeleteTextures(1,&tex); 
+            return 0; 
+        }
         format = GL_RGBA;
     }
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
