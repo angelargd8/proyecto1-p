@@ -230,10 +230,14 @@ static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
     glBindTexture(GL_TEXTURE_2D, tex);
     glColor4f(1,1,1,1);
     glBegin(GL_QUADS);
-      glTexCoord2f(0,0); glVertex2f(x,   y);
-      glTexCoord2f(1,0); glVertex2f(x+w, y);
-      glTexCoord2f(1,1); glVertex2f(x+w, y+h);
-      glTexCoord2f(0,1); glVertex2f(x,   y+h);
+      glTexCoord2f(0,0); 
+      glVertex2f(x,   y);
+      glTexCoord2f(1,0); 
+      glVertex2f(x+w, y);
+      glTexCoord2f(1,1); 
+      glVertex2f(x+w, y+h);
+      glTexCoord2f(0,1); 
+      glVertex2f(x,   y+h);
     glEnd();
     glDisable(GL_TEXTURE_2D);
 }
