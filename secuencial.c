@@ -1,42 +1,39 @@
-// libreriasss
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
-#include <SDL2/SDL.h> //crear la ventana, gestiona teclado/mouse
-#include <SDL2/SDL_image.h> // carga imagenes
-#include <GL/gl.h> // funciones de OpenGL
-#include <GL/glu.h> // utilidades de OpenGL
-#include <SDL2/SDL_ttf.h> // textos
+
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
+#include <SDL2/SDL_ttf.h>
 
 #include <math.h>
 #include <time.h>
 
-// configuracion
+//  Configuración 
 #define TEX_COUNT       10
 #define MAX_SEEDS       100
 #define DIFF_ITERS      1        
 #define USE_GAUSS_BLUR  1        
 #define GAUSS_ITERS     2
 
-// imagenes
-static const char* waterTexture = "assets/agua.png";
-static const char* snowTexture = "assets/snow.png";
-static const char* iceTexture = "assets/blue_ice.png";
-static const char* lavaTexture = "assets/lava.png";
-static const char* diamondTexture = "assets/diamond_ore.png";
-static const char* endStoneTexture = "assets/end_stone.png";
-static const char* obsidianTexture = "assets/obsidian.png";
+static const float TOTAL_TIME = 8.0f;   // etapa más dinámica que 11s
+static const float FADE_TIME  = 0.60f;  // ancho del pulso por celda
+
+//  Texturas 
+static const char* waterTexture        = "assets/agua.png";
+static const char* snowTexture         = "assets/snow.png";
+static const char* iceTexture          = "assets/blue_ice.png";
+static const char* lavaTexture         = "assets/lava.png";
+static const char* diamondTexture      = "assets/diamond_ore.png";
+static const char* endStoneTexture     = "assets/end_stone.png";
+static const char* obsidianTexture     = "assets/obsidian.png";
 static const char* jackoLanternTexture = "assets/jack_o_lantern.png";
-
-static const char* dirtTexture = "assets/dirt_128x128.png";
-static const char* grassTexture = "assets/grass_block_top_128x128.png";
-
-
-static const float TOTAL_TIME = 11.0f; //tiempo de propagacion base en secS
-static const float FADE_TIME = 0.40f; //tiempo de mezcla por celda, igual en sec
-
+static const char* dirtTexture         = "assets/dirt_128x128.png";
+static const char* grassTexture        = "assets/grass_block_top_128x128.png";
 
 //  Estructuras 
 typedef struct {
@@ -45,10 +42,7 @@ typedef struct {
     float** grid; // filas -> punteros a data contigua
 } Grid;
 
-typedef struct { 
-    float x, y; 
-    float alpha; 
-} CellInfo;
+typedef struct { float x, y; float alpha; } CellInfo;
 
 typedef struct {
     int row, col;
@@ -59,54 +53,31 @@ static Seed seeds[MAX_SEEDS];
 static int   seedCount = 0;
 
 // Utils 
-// Limita un float al rango [0,1]. es el  x Valor a limitar.
 static inline float clamp01(float x){ return x<0.f?0.f:(x>1.f?1.f:x); }
-// limita un entero al rango [lo, hi], b es el valor a limitar y lo y hi son los limites
 static inline int   clampi (int v,int lo,int hi){ return v<lo?lo:(v>hi?hi:v); }
 
-/*
-reserva una matriz de floats de rows x cols,
-devuelve un puntero a la tabla de punteros y un puntero a la data contigua
-*/
 static float** alloc_grid2d(int rows, int cols, float** backing_out) {
     float **ptrs = (float**)malloc(rows * sizeof(float*));
     float *data  = (float*)malloc(rows * cols * sizeof(float));
-    if (!ptrs || !data) { 
-        fprintf(stderr,"alloc_grid2d: OOM\n"); 
-        exit(1); 
-    }
+    if (!ptrs || !data) { fprintf(stderr,"alloc_grid2d: OOM\n"); exit(1); }
     for (int r = 0; r < rows; ++r) ptrs[r] = data + r*cols;
     *backing_out = data;
     return ptrs;
 }
-
-/*
-Libera una matriz de floats creada por alloc_grid2d 
-*/
 static void free_grid2d(float **ptrs, float *backing) {
     if (backing) free(backing);
     if (ptrs)    free(ptrs);
 }
 
-/*
-reserva una matriz de int de rows x cols, 
-devuelve un puntero a la tabla de punteros y un puntero a la data contigua
-*/
+// entero (para latch de etapa)
 static int** alloc_grid2d_i(int rows, int cols, int** backing_out) {
     int **ptrs = (int**)malloc(rows * sizeof(int*));
     int *data  = (int*)malloc(rows * cols * sizeof(int));
-    if (!ptrs || !data) { 
-        fprintf(stderr,"alloc_grid2d_i: OOM\n"); 
-        exit(1); 
-    }
+    if (!ptrs || !data) { fprintf(stderr,"alloc_grid2d_i: OOM\n"); exit(1); }
     for (int r = 0; r < rows; ++r) ptrs[r] = data + r*cols;
     *backing_out = data;
     return ptrs;
 }
-
-/*
-Libera una matriz de int creada por alloc_grid2d_i 
-*/
 static void free_grid2d_i(int **ptrs, int *backing) {
     if (backing) free(backing);
     if (ptrs)    free(ptrs);
@@ -114,69 +85,41 @@ static void free_grid2d_i(int **ptrs, int *backing) {
 
 // swap O(1) de tablas de punteros (A <-> B)
 static inline void swap_rows(float ***A, float ***B){
-    float **tmp = *A; 
-    *A = *B; 
-    *B = tmp;
+    float **tmp = *A; *A = *B; *B = tmp;
 }
 
-/*
-Calcula el mejor grid para colocar n elementos intentando
-aproximar el aspecto de (ancho:alto)
-*/
+//  Grid ideal
 static Grid best_grid(int n, int w, int h){
     if (n<=0 ) return (Grid){0,0,NULL};
-
     if (w<=0 || h<=0) return (Grid){1,n,NULL};
-
     double aspect = (double)w/(double)h;
-
     Grid best = (Grid){1,n,NULL};
     double best_err = fabs(((double)best.cols/(double)best.rows) - aspect);
-
     for (int d=1; d*d<=n; ++d){
         if (n % d) continue;
         int r1 = d, c1 = n/d;
         double e1 = fabs(((double)c1/(double)r1) - aspect);
-        if (e1 < best_err){ 
-            best=(Grid){r1,c1,NULL}; 
-            best_err=e1; 
-        }
+        if (e1 < best_err){ best=(Grid){r1,c1,NULL}; best_err=e1; }
         int r2 = n/d, c2 = d;
         double e2 = fabs(((double)c2/(double)r2) - aspect);
-        if (e2 < best_err){ 
-            best=(Grid){r2,c2,NULL}; 
-            best_err=e2; 
-        }
+        if (e2 < best_err){ best=(Grid){r2,c2,NULL}; best_err=e2; }
     }
     return best;
 }
 
 
-/*
-Carga una imagen y la sube como textura de OpenGL y 
-usa la SDL_image para decodificar y configura los parámetros 
-de filtrado y wrap 
-*/
 static GLuint load_texture(const char* path){
-
     SDL_Surface* s = IMG_Load(path);
-    if (!s){ 
-        fprintf(stderr, "IMG_Load %s: %s\n", path, IMG_GetError()); 
-        return 0; 
-    }
-
+    if (!s){ fprintf(stderr, "IMG_Load %s: %s\n", path, IMG_GetError()); return 0; }
     GLuint tex=0; glGenTextures(1, &tex); glBindTexture(GL_TEXTURE_2D, tex);
     GLenum format = GL_RGB;
-
     if (s->format->BytesPerPixel==4) format=(s->format->Rmask==0x000000ff)?GL_RGBA:GL_BGRA;
     else if (s->format->BytesPerPixel==3) format=(s->format->Rmask==0x000000ff)?GL_RGB:GL_BGR;
-
     else {
         SDL_Surface* conv = SDL_ConvertSurfaceFormat(s, SDL_PIXELFORMAT_ABGR8888, 0);
         SDL_FreeSurface(s); s=conv; if(!s){ glDeleteTextures(1,&tex); return 0; }
         format = GL_RGBA;
     }
-
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, (format==GL_RGB||format==GL_BGR)?GL_RGB:GL_RGBA,
                  s->w, s->h, 0, format, GL_UNSIGNED_BYTE, s->pixels);
@@ -188,17 +131,11 @@ static GLuint load_texture(const char* path){
     return tex;
 }
 
-/*
-Genera una textura con color con el texto del msg usando el 
-font y el color de los parámetros. 
-*/
 static GLuint text_to_texture(TTF_Font* font, const char* msg,
                               SDL_Color col, int* out_w, int* out_h)
 {
     SDL_Surface* src = TTF_RenderUTF8_Blended(font, msg, col);
-
     if (!src) return 0;
-
     SDL_Surface* s = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ABGR8888, 0);
     SDL_FreeSurface(src); if (!s) return 0;
 
@@ -209,16 +146,11 @@ static GLuint text_to_texture(TTF_Font* font, const char* msg,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
     if (out_w) *out_w = s->w; if (out_h) *out_h = s->h;
-
     SDL_FreeSurface(s);
     return tex;
 }
 
-/*
-Dibuja un quad 2D texturizado en coordenadas de la pantalla 
-*/
 static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
@@ -234,7 +166,6 @@ static void draw_textured_quad(GLuint tex, float x, float y, float w, float h) {
     glDisable(GL_TEXTURE_2D);
 }
 
-// Abre una fuente TTF buscando en la ruta 
 static TTF_Font* open_font_portable(int ptsize) {
     const char* rel = "assets/DejaVuSans.ttf";
     char *base = SDL_GetBasePath();
@@ -250,42 +181,17 @@ static TTF_Font* open_font_portable(int ptsize) {
 }
 
 // Semilla a esquina más lejana 
-/*
-Mueve la celda a la esquina Manhattan más lejana, 
-calcula la distancia Manhattan a la semilla actual 
-que sea máxima y actualiza la semilla a esa celda. 
-*/
 static void advance_seed_to_far_corner(int *seedRow, int *seedCol, int rows, int cols) {
     int sr=*seedRow, sc=*seedCol;
     int d00=sr+sc, d01=sr+(cols-1-sc), d10=(rows-1-sr)+sc, d11=(rows-1-sr)+(cols-1-sc);
     int r=0,c=0,maxd=d00;
-    if (d01>maxd){
-        maxd=d01;
-        r=0;
-        c=cols-1;
-    }
-    if (d10>maxd){
-        maxd=d10;
-        r=rows-1;
-        c=0;
-    }
-    if (d11>maxd){
-        maxd=d11;
-        r=rows-1;
-        c=cols-1;
-    }
-    *seedRow=r;
-    *seedCol=c;
+    if (d01>maxd){maxd=d01;r=0;        c=cols-1;}
+    if (d10>maxd){maxd=d10;r=rows-1;   c=0;}
+    if (d11>maxd){maxd=d11;r=rows-1;   c=cols-1;}
+    *seedRow=r; *seedCol=c;
 }
 
 
-/*
-Dibuja un grid de celdas mezclando texturas por celda y avanza latch
-digamos que cada celda tiene una textura base y una overlay,
-entonces para cada celda se calcula el pulso de mezcla y se aplica
-desde una textura  a la siguiente textuea siguiendo una onda temporal 
-basada en la distancia Manhattan a una semilla
-*/
 static void drawGridCycle(
     GLuint *tex_cycle, int tex_count,
     int global_stage_idx, float stage_time,
@@ -361,42 +267,20 @@ static void drawGridCycle(
 }
 
 //  Main 
-/*
-inicializa SDL y OpenGL
-crea el grid
-ejecuta el looop principal
-inicializa SDL, las imagenes SDL_ttf para mostrar los FPS
-determina las rows y cols del grid con best grid
-en cada frame procesa eventos, actualiza la simulacion y dibuja
-por ultimo imprime el resumen de la ejecucion y libera recursos
-*/
 int main(int argc, char**argv){
     // Semilla inicial para que la ola exista desde el primer frame
     int  seedRow = 0, seedCol = 0;
     bool hasSeed = true;
 
 
-    if (argc < 2) { 
-        fprintf(stderr, "Uso: %s <n>\n", argv[0]);
-        return 1; 
-    }
+    if (argc < 2) { fprintf(stderr, "Uso: %s <n>\n", argv[0]); return 1; }
     int n = atoi(argv[1]);
-    if (n <= 4) { 
-        fprintf(stderr,"n debe ser > 4\n"); 
-        return 1; 
-    }
+    if (n <= 4) { fprintf(stderr,"n debe ser > 4\n"); return 1; }
 
     // SDL/IMG
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) { 
-        fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); 
-        return 1; 
-    }
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); return 1; }
     int img_flags = IMG_INIT_PNG | IMG_INIT_JPG;
-    if ((IMG_Init(img_flags) & img_flags) == 0) { 
-        fprintf(stderr,"IMG_Init: %s\n", IMG_GetError()); 
-        SDL_Quit(); 
-        return 1; 
-    }
+    if ((IMG_Init(img_flags) & img_flags) == 0) { fprintf(stderr,"IMG_Init: %s\n", IMG_GetError()); SDL_Quit(); return 1; }
 
     //
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -408,21 +292,10 @@ int main(int argc, char**argv){
     SDL_Window *win = SDL_CreateWindow("Screensaver",
                       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                       1536, 1024, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    if (!win) { 
-        fprintf(stderr,"SDL_CreateWindow: %s\n", SDL_GetError()); 
-        IMG_Quit(); 
-        SDL_Quit(); 
-        return 1; 
-    }
+    if (!win) { fprintf(stderr,"SDL_CreateWindow: %s\n", SDL_GetError()); IMG_Quit(); SDL_Quit(); return 1; }
 
     SDL_GLContext glc = SDL_GL_CreateContext(win);
-    if (!glc) { 
-        fprintf(stderr,"SDL_GL_CreateContext: %s\n", SDL_GetError()); 
-        SDL_DestroyWindow(win); 
-        IMG_Quit(); 
-        SDL_Quit(); 
-        return 1; 
-    }
+    if (!glc) { fprintf(stderr,"SDL_GL_CreateContext: %s\n", SDL_GetError()); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
 
     // VSync ON
     SDL_GL_SetSwapInterval(1);
@@ -455,35 +328,18 @@ int main(int argc, char**argv){
     if (TTF_Init() != 0) { fprintf(stderr,"TTF_Init: %s\n", TTF_GetError());
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
-        free_grid2d(B, B_back); 
-        free_grid2d(g.grid, A_back);
-        SDL_GL_DeleteContext(glc); 
-        
-        SDL_DestroyWindow(win); 
-        IMG_Quit(); 
-        SDL_Quit(); 
-        return 1; 
-    }
-
+        free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
+        SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
     TTF_Font* font = open_font_portable(18);
     if (!font) { fprintf(stderr,"No pude abrir fuente: %s\n", TTF_GetError());
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
         free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
-        TTF_Quit(); 
-        SDL_GL_DeleteContext(glc); 
-        SDL_DestroyWindow(win); 
-        IMG_Quit(); SDL_Quit(); 
-        return 1; 
-    }
+        TTF_Quit(); SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1; }
 
     // HUD FPS
-    Uint32 fps_t0 = SDL_GetTicks(); 
-    int fps_frames=0; 
-    float fps_value=0.f;
-    GLuint fps_tex=0; 
-    int fps_w=0, fps_h=0; 
-    char fps_msg[64]="FPS: 0.0";
+    Uint32 fps_t0 = SDL_GetTicks(); int fps_frames=0; float fps_value=0.f;
+    GLuint fps_tex=0; int fps_w=0, fps_h=0; char fps_msg[64]="FPS: 0.0";
 
     // Texturas
     GLuint dirtTex=load_texture(dirtTexture),   grassTex=load_texture(grassTexture);
@@ -491,7 +347,6 @@ int main(int argc, char**argv){
     GLuint iceTex=load_texture(iceTexture),     lavaTex=load_texture(lavaTexture);
     GLuint diamondTex=load_texture(diamondTexture), obsidianTex=load_texture(obsidianTexture);
     GLuint endStoneTex=load_texture(endStoneTexture), jackTex=load_texture(jackoLanternTexture);
-
     if (!dirtTex||!grassTex||!waterTex||!snowTex||!iceTex||!lavaTex||!diamondTex||!obsidianTex||!endStoneTex||!jackTex){
         fprintf(stderr,"Fallo al cargar texturas\n");
         GLuint all[] = {dirtTex,grassTex,waterTex,iceTex,snowTex,lavaTex,diamondTex,obsidianTex,endStoneTex,jackTex};
@@ -499,13 +354,8 @@ int main(int argc, char**argv){
         TTF_CloseFont(font); TTF_Quit();
         free_grid2d_i(lastLatchedStage, latched_back);
         free_grid2d_i(texBase, texBase_back);
-        free_grid2d(B, B_back); 
-        free_grid2d(g.grid, A_back);
-        SDL_GL_DeleteContext(glc); 
-        SDL_DestroyWindow(win); 
-        IMG_Quit(); 
-        SDL_Quit(); 
-        return 1;
+        free_grid2d(B, B_back); free_grid2d(g.grid, A_back);
+        SDL_GL_DeleteContext(glc); SDL_DestroyWindow(win); IMG_Quit(); SDL_Quit(); return 1;
     }
     GLuint tex_cycle[TEX_COUNT] = { dirtTex, grassTex, waterTex, iceTex, snowTex,
                                     lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex };
@@ -528,8 +378,7 @@ int main(int argc, char**argv){
                 if (e.key.keysym.sym == SDLK_r)      t0_ms = SDL_GetTicks();
             }
             if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
-                int w,h; 
-                SDL_GetWindowSize(win,&w,&h);
+                int w,h; SDL_GetWindowSize(win,&w,&h);
                 float cellW=(float)w / g.cols, cellH=(float)h / g.rows;
                 int col=(int)(e.button.x / cellW), row=(int)(e.button.y / cellH);
                 col = clampi(col,0,g.cols-1); row = clampi(row,0,g.rows-1);
@@ -539,12 +388,11 @@ int main(int argc, char**argv){
                 }
                 seedRow=row; seedCol=col; hasSeed=true;
             }
-
         }
 
         // Etapas 
         float elapsed = (SDL_GetTicks() - t0_ms) / 1000.0f;
-        const float STAGE_DURATION = TOTAL_TIME + 2.0f * FADE_TIME; 
+        const float STAGE_DURATION = TOTAL_TIME + 2.0f * FADE_TIME; // <== cambio clave
         int   stage_idx  = (int)floorf(elapsed / STAGE_DURATION) % TEX_COUNT;
         float stage_time = fmodf(elapsed, STAGE_DURATION);
 
@@ -556,7 +404,7 @@ int main(int argc, char**argv){
             prev_stage_idx = stage_idx;
         }
 
-        
+        // una región paralela por frame
         const Uint32 nowTicks = SDL_GetTicks();
         const float t = nowTicks * 0.001f;
         const int rows = g.rows, cols = g.cols;
@@ -628,16 +476,13 @@ int main(int argc, char**argv){
                 
             }
             #endif
-        } 
+        } // fin región paralela
 
         // DIBUJO 
         int w,h; SDL_GetWindowSize(win, &w, &h);
         glViewport(0, 0, w, h);
-        glMatrixMode(GL_PROJECTION); 
-        glLoadIdentity(); 
-        glOrtho(0.0, (GLdouble)w, (GLdouble)h, 0.0, -1.0, 1.0);
-        glMatrixMode(GL_MODELVIEW);  
-        glLoadIdentity();
+        glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0.0, (GLdouble)w, (GLdouble)h, 0.0, -1.0, 1.0);
+        glMatrixMode(GL_MODELVIEW);  glLoadIdentity();
         glClear(GL_COLOR_BUFFER_BIT);
 
         drawGridCycle(tex_cycle, TEX_COUNT, stage_idx, stage_time,
@@ -656,23 +501,18 @@ int main(int argc, char**argv){
             fps_tex = text_to_texture(font, fps_msg, white, &fps_w, &fps_h);
             printf("%s\n", fps_msg);
         }
-        
         if (fps_tex) {
             float pad=10.f, bx=10.f, by=10.f, bw=fps_w+pad*2, bh=fps_h+pad*2;
             glDisable(GL_TEXTURE_2D);
             glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glColor4f(0.f,0.f,0.f,0.4f);
             glBegin(GL_QUADS);
-              glVertex2f(bx,by); 
-              glVertex2f(bx+bw,by); 
-              glVertex2f(bx+bw,by+bh); 
-              glVertex2f(bx,by+bh);
+              glVertex2f(bx,by); glVertex2f(bx+bw,by); glVertex2f(bx+bw,by+bh); glVertex2f(bx,by+bh);
             glEnd();
             draw_textured_quad(fps_tex, bx+pad, by+pad, (float)fps_w, (float)fps_h);
         }
 
         SDL_GL_SwapWindow(win);
-        //sumar 1 frame al total
         total_frames++;
     }
 
@@ -683,7 +523,7 @@ int main(int argc, char**argv){
            run_secs, total_frames, avg_fps);
 
     // Limpieza
-    GLuint all[] = {dirtTex, grassTex, waterTex, iceTex, snowTex, lavaTex, diamondTex, obsidianTex, endStoneTex, jackTex};
+    GLuint all[] = {dirtTex,grassTex,waterTex,iceTex,snowTex,lavaTex,diamondTex,obsidianTex,endStoneTex,jackTex};
     glDeleteTextures(sizeof all/sizeof all[0], all);
     if (fps_tex) glDeleteTextures(1, &fps_tex);
 
@@ -697,7 +537,6 @@ int main(int argc, char**argv){
 
     SDL_GL_DeleteContext(glc);
     SDL_DestroyWindow(win);
-    IMG_Quit(); 
-    SDL_Quit();
+    IMG_Quit(); SDL_Quit();
     return 0;
 }
